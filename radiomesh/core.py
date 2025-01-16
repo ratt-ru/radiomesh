@@ -21,8 +21,7 @@ def wgridder_conventions(l0, m0):
 
     according to the conventions documented here https://github.com/mreineck/ducc/issues/34
 
-    Note that these conventions are stored as dataset attributes in order
-    to call the operators acting on datasets with a consistent convention.
+    These conventions are chosen to math the wgridder in ducc
     '''
     return False, True, False, -l0, -m0
 
