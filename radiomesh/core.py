@@ -2,6 +2,7 @@ import numpy as np
 import numba
 from numba import njit, literally, types
 from numba.extending import overload
+from scipy.constants import c as lightspeed
 import sympy as sm
 from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
@@ -9,9 +10,10 @@ from sympy.utilities.lambdify import lambdify
 
 JIT_OPTIONS = {
     "nogil": True,
-    "cache": True
+    "cache": True,
+    "error_model": 'numpy',
+    "fastmath": True
 }
-
 
 def wgridder_conventions(l0, m0):
     '''
@@ -26,12 +28,14 @@ def wgridder_conventions(l0, m0):
     return False, True, False, -l0, -m0
 
 
-@njit(nogil=True, cache=True, inline='always')
-def _es_kernel(x, beta, k):
-    return np.exp(beta*k*(np.sqrt((1-x)*(1+x)) - 1))
+@njit(**JIT_OPTIONS, inline='always')
+def _es_kernel(x, y, xkern, ykern, betak):
+    for i in range(x.size):
+        xkern[i] = np.exp(betak*(np.sqrt(1-x[i]*x[i]) - 1))
+        ykern[i] = np.exp(betak*(np.sqrt(1-y[i]*y[i]) - 1))
 
 
-@njit(nogil=True, cache=False, parallel=False)
+@njit(**JIT_OPTIONS)
 def grid_data(data, weight, flag, jones, tbin_idx, tbin_counts,
               ant1, ant2, nx, ny, nx_psf, ny_psf, pol, product, nc):
 
@@ -72,7 +76,7 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
 
     def _impl(data, weight, flag, uvw, freq, jones, tbin_idx, tbin_counts,
               ant1, ant2, nx, ny, cell_size_x, cell_size_y,
-              pol, product, nc):
+              pol, product, nc, k=6):
         # for dask arrays we need to adjust the chunks to
         # start counting from zero
         tbin_idx -= tbin_idx.min()
@@ -92,8 +96,11 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
         vmax = np.abs(-1/cell_size_y/2 - v_cell/2)
 
         normfreq = freq / lightspeed
-        ko2 = k//2
-
+        ko2 = k/2
+        betak = 2.3*k
+        pos = np.arange(k) - ko2
+        xkern = np.zeros(k)
+        ykern = np.zeros(k)
         for t in range(nt):
             for row in range(tbin_idx[t],
                              tbin_idx[t] + tbin_counts[t]):
@@ -123,20 +130,22 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
                     # indices
                     u_idx = int(np.round(ug))
                     v_idx = int(np.round(vg))
-                    
-                    for i in range(k):
-                        idx = i - ko2
-                        x_idx = idx + u_idx
-                        x = x_idx - ug + 0.5
-                        xkern = _es_kernel(x/ko2, 2.3, k)
-                        for j in range(k):
-                            jdx = j - ko2
-                            y_idx = jdx + v_idx
-                            y = y_idx - vg + 0.5
-                            ykern = _es_kernel(y/ko2, 2.3, k)
-                            for c in range(ncorr):  # vectorized?
-                                wgt_grid[x_idx, y_idx, c] += xkern * ykern * wgt[c]
-                                vis_grid[x_idx, y_idx, c] += xkern * ykern * wgt[c] * vis[c]
+
+                    # the kernel is separable and only defined on [-1,1]
+                    # do we ever need to check these bounds?
+                    x_idx = pos + u_idx
+                    x = (x_idx - ug + 0.5)/ko2
+                    y_idx = pos + v_idx
+                    y = (y_idx - vg + 0.5)/ko2
+                    _es_kernel(x, y, xkern, ykern, betak)
+
+                    for c in range(ncorr):
+                        wc = wgt[c]
+                        for i, xi in zip(x_idx, xkern):
+                            for j, yj in zip(y_idx, ykern):
+                                xyw = xi*yj*wc
+                                wgt_grid[c, i, j] += xyw
+                                vis_grid[c, i, j] += xyw * vis[c]
 
         return (vis_grid, wgt_grid)
     
