@@ -6,6 +6,8 @@ from numba.core import types
 import numpy as np
 from typing import List
 
+from scipy.constants import c as lightspeed
+
 from radiomesh.es_kernel import es_kernel_factory
 from radiomesh.product import (
   load_data_factory,
@@ -134,7 +136,7 @@ def do_pol_test_overload(visibilities, uvw, weights, frequencies, nx, ny, fov, s
   V_CELL = 1.0 / (NY * CELL_SIZE_Y)
   U_MAX = 1.0 / CELL_SIZE_X / 2.0
   V_MAX = 1.0 / CELL_SIZE_Y / 2.0
-  LIGHTSPEED = 3e9    # temporary
+  LIGHTSPEED = lightspeed
   SUPPORT = support.literal_value
   HALF_SUPPORT = SUPPORT // 2
   BETA_K = 2.3 * HALF_SUPPORT
@@ -261,7 +263,7 @@ def test_grid_fourcorr(uvw, freq, vis, wgt, npix, fov, cell_rad,
 
   import time
   start = time.time()
-  result = do_pol_test_wrapper(vis, uvw, wgt, freq, npix, npix, str(fov), 6, "[XX,XY,YX,YY] -> [I,Q,U,V]")
+  result = do_pol_test_wrapper(vis, uvw, wgt, freq, npix, npix, str(fov), 7, "[XX,XY,YX,YY] -> [I,Q,U,V]")
   print(f"Elapsed {time.time() - start}s")
   return result
 
@@ -281,14 +283,9 @@ if __name__ == "__main__":
     print(f"Visibility size {vis.nbytes / 1024.**3}")
     ms.close()
     freq = table(f'{ms_name}::SPECTRAL_WINDOW').getcol('CHAN_FREQ')[0]
-
-    utime = np.unique(time)
-    vis = vis.reshape((utime.size, -1) + vis.shape[1:])
-    wgt = wgt.reshape((utime.size, -1) + wgt.shape[1:])
-    uvw = uvw.reshape((utime.size, -1) + uvw.shape[1:])
     uv_max = np.maximum(np.abs(uvw[:, 0]).max(), np.abs(uvw[:, 1]).max())
     max_freq = freq.max()
-    cell_N = 1.0 / (2 * uv_max * max_freq / 3e9)  # max cell size
+    cell_N = 1.0 / (2 * uv_max * max_freq / lightspeed)  # max cell size
     cell_rad = cell_N/2.0  # oversample by a factor of two
     fov = 1.0  # field of view degrees
     # import ipdb; ipdb.set_trace()
@@ -296,6 +293,11 @@ if __name__ == "__main__":
     if npix % 2:
         npix += 1
 
+
+    utime = np.unique(time)
+    vis = vis.reshape((utime.size, -1) + vis.shape[1:])
+    wgt = wgt.reshape((utime.size, -1) + wgt.shape[1:])
+    uvw = uvw.reshape((utime.size, -1) + uvw.shape[1:])
 
     print(test_grid_fourcorr(uvw, freq, vis, wgt, npix, fov, cell_rad).shape)
 
