@@ -12,7 +12,7 @@ JIT_OPTIONS = {
     "nogil": True,
     "cache": True,
     "error_model": 'numpy',
-    "fastmath": True
+    "fastmath": False
 }
 
 def wgridder_conventions(l0, m0):
@@ -28,11 +28,18 @@ def wgridder_conventions(l0, m0):
     return False, True, False, -l0, -m0
 
 
+# hardcode 2D gridding params
+# support, padding, epsilon, beta, alpha
+# 8, 1.40, 3.1679034e-05, 1.83155364990234371, 0.516968027750650871  (single precision)
+# 8, 1.40, 8.5117152e-06, 1.82943505181206612, 0.517185719807942368  (double precision)
+
+
+
 @njit(**JIT_OPTIONS, inline='always')
-def _es_kernel(x, y, xkern, ykern, betak):
+def _es_kernel(x, y, xkern, ykern, betak, alphak):
     for i in range(x.size):
-        xkern[i] = np.exp(betak*(np.sqrt(1-x[i]*x[i]) - 1))
-        ykern[i] = np.exp(betak*(np.sqrt(1-y[i]*y[i]) - 1))
+        xkern[i] = np.exp(betak*(pow(1-x[i]*x[i], alphak) - 1))
+        ykern[i] = np.exp(betak*(pow(1-y[i]*y[i], alphak) - 1))
 
 
 @njit(**JIT_OPTIONS)
@@ -76,7 +83,8 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
 
     def _impl(data, weight, flag, uvw, freq, jones, tbin_idx, tbin_counts,
               ant1, ant2, nx, ny, cell_size_x, cell_size_y,
-              pol, product, nc, k=6):
+              pol, product, nc,
+              k=8, betak=1.83155364990234371, alpha=0.516968027750650871):
         # for dask arrays we need to adjust the chunks to
         # start counting from zero
         tbin_idx -= tbin_idx.min()
