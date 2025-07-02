@@ -7,7 +7,7 @@ from scipy.constants import c as lightspeed
 
 def test_grid_fourcorr(uvw, freq, vis, wgt, npix, cell_rad,
                        epsilon=1e-4, precision='double', nthreads=1):
-    
+
     if precision == 'double':
         rtype = 'f8'
         ctype = 'c16'
@@ -52,6 +52,7 @@ if __name__=='__main__':
         wgt = ms.getcol('WEIGHT_SPECTRUM')
     except:
         wgt = np.ones(vis.shape, dtype='f4')
+    print(f"Visibility size {vis.nbytes / 1024.**3}")
     ms.close()
     freq = table(f'{ms_name}::SPECTRAL_WINDOW').getcol('CHAN_FREQ')[0]
     uv_max = np.maximum(np.abs(uvw[:, 0]).max(), np.abs(uvw[:, 1]).max())
