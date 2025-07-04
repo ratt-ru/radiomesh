@@ -30,9 +30,7 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
     sig = return_type(position, index)
 
     def x_index_impl(position, index):
-      v = position + float(index)
-      return v
-      # return v if -1.0 <= v < 1 else 0.0
+      return position + float(index)
 
     def codegen(context, builder, signature, args):
       position, index = args
@@ -78,6 +76,7 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
 
     def kernel_impl(x_index, grid):
       x = (x_index - grid + 0.5) / FLOAT_HALF_SUPPORT
+      x = x if 1.0 <= x < 1.0 else 0.0
       return np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
 
     def codegen(context, builder, signature, args):
