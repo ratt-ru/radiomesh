@@ -1,10 +1,11 @@
-from typing import Callable
+from typing import Callable, Tuple
 
+import numpy as np
 from numba.core import cgutils, types
 from numba.extending import intrinsic
-import numpy as np
 
-def es_kernel_factory(betak: float) -> Callable:
+
+def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
   @intrinsic
   def es_kernel_positions(typingctx, position, index):
     """Return a tuple of kernel :code:`position - float(index)` position.
@@ -17,8 +18,9 @@ def es_kernel_factory(betak: float) -> Callable:
     Returns:
       Tuple of kernel index positions
     """
-    if (not isinstance(position, types.UniTuple) or
-        not isinstance(position.dtype, types.Float)):
+    if not isinstance(position, types.UniTuple) or not isinstance(
+      position.dtype, types.Float
+    ):
       raise TypeError(f"'x' ({position}) must be a tuple of floats")
 
     if not isinstance(index, types.Integer):
@@ -29,7 +31,7 @@ def es_kernel_factory(betak: float) -> Callable:
 
     def x_index_impl(position, index):
       v = position + float(index)
-      return v if -1. <= v < 1 else 0.0
+      return v if -1.0 <= v < 1 else 0.0
 
     def codegen(context, builder, signature, args):
       position, index = args
@@ -40,7 +42,9 @@ def es_kernel_factory(betak: float) -> Callable:
 
       for i in range(len(position_type)):
         p_value = builder.extract_value(position, i)
-        x_index = context.compile_internal(builder, x_index_impl, index_sig, [p_value, index])
+        x_index = context.compile_internal(
+          builder, x_index_impl, index_sig, [p_value, index]
+        )
         index_tuple = builder.insert_value(index_tuple, x_index, i)
 
       return index_tuple
@@ -58,12 +62,13 @@ def es_kernel_factory(betak: float) -> Callable:
     Returns:
       Tuple of kernel values
     """
-    if (not isinstance(x_index, types.UniTuple) or
-        not isinstance(x_index.dtype, types.Float)):
+    if not isinstance(x_index, types.UniTuple) or not isinstance(
+      x_index.dtype, types.Float
+    ):
       raise TypeError(f"'x' ({x_index}) must be a tuple of floats")
 
     if not isinstance(grid, types.Float):
-      raise TypeError(f"'grid' must be a float")
+      raise TypeError("'grid' must be a float")
 
     support = len(x_index)
     half_support = support // 2
@@ -72,7 +77,7 @@ def es_kernel_factory(betak: float) -> Callable:
 
     def kernel_impl(x_index, grid):
       x = (x_index - grid + 0.5) / half_support
-      return np.exp(betak * (np.sqrt(1.0 - x*x) - 1.0))
+      return np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
 
     def codegen(context, builder, signature, args):
       x_index, grid = args
