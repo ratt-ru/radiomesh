@@ -70,12 +70,12 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
       raise TypeError("'grid' must be a float")
 
     support = len(x_index)
-    FLOAT_HALF_SUPPORT = float(support // 2)
+    half_support = support / 2.0
     return_type = types.Tuple([x_index.dtype] * support)
     sig = return_type(x_index, grid)
 
     def kernel_impl(x_index, grid):
-      x = (x_index - grid + 0.5) / FLOAT_HALF_SUPPORT
+      x = (x_index - grid + 0.5) / half_support
       x = x if 1.0 <= x < 1.0 else 0.0
       return np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
 
