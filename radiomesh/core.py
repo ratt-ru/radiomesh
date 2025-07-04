@@ -2,9 +2,10 @@ import numpy as np
 import sympy as sm
 from numba import literally, njit, types
 from numba.extending import overload
-from scipy.constants import c as lightspeed
 from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
+
+from radiomesh.constants import LIGHTSPEED
 
 JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": True}
 
@@ -160,7 +161,7 @@ def nb_grid_data_impl(
     v_cell = 1 / (ny * cell_size_y)
     vmax = np.abs(-1 / cell_size_y / 2 - v_cell / 2)
 
-    normfreq = freq / lightspeed
+    normfreq = freq / LIGHTSPEED
     ko2 = k / 2
     betak = 2.3 * k
     pos = np.arange(k) - ko2

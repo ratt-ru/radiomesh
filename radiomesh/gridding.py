@@ -8,8 +8,8 @@ import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue
 from numba.extending import overload
-from scipy.constants import c as lightspeed
 
+from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import es_kernel_factory
 from radiomesh.product import (
   accumulate_data_factory,
@@ -91,7 +91,6 @@ def wgrid_overload(
   V_CELL = 1.0 / (NY * CELL_SIZE_Y)
   U_MAX = 1.0 / CELL_SIZE_X / 2.0
   V_MAX = 1.0 / CELL_SIZE_Y / 2.0
-  LIGHTSPEED = lightspeed
   SUPPORT = support.literal_value
   HALF_SUPPORT = SUPPORT // 2
   BETA_K = 2.3 * HALF_SUPPORT
