@@ -52,3 +52,29 @@ jobs:
 
       - name: Run pre-commit hook
         run: uv run --extra dev pre-commit run -a
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/radiomesh
+    permissions:
+      id-token: write
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build
+        run: python -m install --upgrade build build
+
+      - name: Build source distribution and wheel
+        run: python -m build --sdist --wheel
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
