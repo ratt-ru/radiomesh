@@ -18,7 +18,20 @@ from radiomesh.product import (
   pol_to_stokes_factory,
 )
 
-JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
+JIT_OPTIONS = {
+  "parallel": {
+    "comprehension": False,
+    "fusion": True,
+    "numpy": False,
+    "prange": True,
+    "reduction": False,
+    "setitem": False,
+    "stencil": False,
+  },
+  "nogil": True,
+  "cache": False,
+  "fastmath": True,
+}
 
 
 def parse_schema(schema: str) -> List[str]:
@@ -104,7 +117,9 @@ def wgrid_overload(
   pol_to_stokes = pol_to_stokes_factory(pol_schema, stokes_schema)
   es_kernel_pos, es_kernel = es_kernel_factory(BETA_K)
 
-  flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
+  flag_reduce = numba.njit(**{**JIT_OPTIONS, "parallel": False})(
+    lambda a, f: a and f != 0
+  )
 
   def impl(
     uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
@@ -166,6 +181,7 @@ def wgrid_overload(
             for yfi, yk in zip(
               numba.literal_unroll(y_idx), numba.literal_unroll(y_kernel)
             ):
+              # print(u_index, v_index, xfi, yfi, xk, yk)
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(stokes, pol_weight)

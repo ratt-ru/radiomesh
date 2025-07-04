@@ -31,7 +31,8 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
 
     def x_index_impl(position, index):
       v = position + float(index)
-      return v if -1.0 <= v < 1 else 0.0
+      return v
+      # return v if -1.0 <= v < 1 else 0.0
 
     def codegen(context, builder, signature, args):
       position, index = args
@@ -71,12 +72,12 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
       raise TypeError("'grid' must be a float")
 
     support = len(x_index)
-    half_support = support // 2
+    FLOAT_HALF_SUPPORT = float(support // 2)
     return_type = types.Tuple([x_index.dtype] * support)
     sig = return_type(x_index, grid)
 
     def kernel_impl(x_index, grid):
-      x = (x_index - grid + 0.5) / half_support
+      x = (x_index - grid + 0.5) / FLOAT_HALF_SUPPORT
       return np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
 
     def codegen(context, builder, signature, args):
