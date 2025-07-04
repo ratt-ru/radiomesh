@@ -1,9 +1,10 @@
 import math
 from functools import reduce
-from typing import List
+from typing import List, Tuple
 
 import numba
 import numpy as np
+import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue
 from numba.extending import overload
@@ -178,7 +179,18 @@ def wgrid_overload(
 
 
 @numba.njit(**{**JIT_OPTIONS, "parallel": False})
-def wgrid(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema):
+def wgrid(
+  uvw: npt.NDArray[np.floating],
+  visibilities: npt.NDArray[np.complexfloating],
+  weights: npt.NDArray[np.floating],
+  flags: npt.NDArray[np.integer],
+  frequencies: npt.NDArray[np.floating],
+  nx: int,
+  ny: int,
+  fov: str,
+  support: int,
+  schema: str,
+) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
     uvw,
     visibilities,
