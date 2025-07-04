@@ -6,21 +6,9 @@ from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
 
 from radiomesh.constants import LIGHTSPEED
+from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": True}
-
-
-def wgridder_conventions(l0, m0):
-  """
-  Returns
-
-  flip_u, flip_v, flip_w, x0, y0
-
-  according to the conventions documented here https://github.com/mreineck/ducc/issues/34
-
-  These conventions are chosen to math the wgridder in ducc
-  """
-  return False, True, False, -l0, -m0
 
 
 @njit(**JIT_OPTIONS, inline="always")
@@ -119,9 +107,7 @@ def nb_grid_data_impl(
   elif product.literal_value == "FS":
     ns = int(nc.literal_value)
 
-  flip_u, flip_v, flip_w, x0, y0 = wgridder_conventions(x0, y0)  # noqa
-  usign = -1.0 if flip_u else 1.0
-  vsign = -1.0 if flip_v else 1.0
+  usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   def _impl(
     data,
