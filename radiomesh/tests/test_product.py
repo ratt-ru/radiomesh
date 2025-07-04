@@ -45,11 +45,11 @@ def test_accumulate_data():
 def test_pol_conversion(pols, stokes):
   """Test that converting from polarisation to stokes works.
   This depends on correctness of the conversion routines in POL_CONVERSION"""
-  convert = pol_to_stokes_factory(pols, stokes)
+  convert_intrinsic = pol_to_stokes_factory(pols, stokes)
 
   @numba.njit
   def convert(t):
-    return convert(t)
+    return convert_intrinsic(t)
 
   mapping = []
 
