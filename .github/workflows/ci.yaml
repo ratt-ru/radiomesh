@@ -12,6 +12,7 @@ on:
 
 jobs:
   test:
+    name: Continuous Integration
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -33,3 +34,24 @@ jobs:
 
     - name: Run test cases
       run: uv run --extra testing py.test -s -vvv
+
+  pre-commit:
+    name: Run pre-commit hooks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+
+      - name: Run pre-commit hook
+        run: uv run --extra dev pre-commit run -a
