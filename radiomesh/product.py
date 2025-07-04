@@ -1,3 +1,4 @@
+from typing import Callable
 from numba.core import cgutils, types
 from numba.extending import intrinsic
 
@@ -32,8 +33,8 @@ POL_CONVERSION = {
 }
 
 
-def load_data_factory(data_schema):
-    """ Generates an intrinsic that reads :code:`len(data_schema)`
+def load_data_factory(ndata: int) -> Callable:
+    """Generates an intrinsic that reads :code:`ndata`
     values from an array at a given index into a tuple"""
     @intrinsic
     def load_data(typingctx, array, index):
@@ -43,7 +44,7 @@ def load_data_factory(data_schema):
         if not isinstance(index, types.BaseTuple) or not all(isinstance(i, types.Integer) for i in index):
             raise TypeError(f"'index' {index} must be a tuple of integers")
 
-        return_type = types.Tuple([array.dtype] * len(data_schema))
+        return_type = types.Tuple([array.dtype] * ndata)
         sig = return_type(array, index)
 
         def index_factory(pol):
@@ -55,7 +56,7 @@ def load_data_factory(data_schema):
             llvm_ret_type = context.get_value_type(signature.return_type)
             pol_tuple = cgutils.get_null_value(llvm_ret_type)
 
-            for p in range(len(data_schema)):
+            for p in range(ndata):
                 sig = array_type.dtype(array_type, index_type)
                 value = context.compile_internal(builder, index_factory(p), sig, args)
                 pol_tuple = builder.insert_value(pol_tuple, value, p)
@@ -67,24 +68,24 @@ def load_data_factory(data_schema):
     return load_data
 
 
-def apply_weight_factory(data_schema):
+def apply_weight_factory(ndata):
     """Returns an intrinsic that applies weight to a tuple of data"""
     @intrinsic
     def apply_visibility_weights(typingctx, data, weight):
-        if not isinstance(data, types.UniTuple) or len(data) != len(data_schema):
-            raise TypeError(f"'data' ({data}) must be a tuple of length {len(data_schema)}")
+        if not isinstance(data, types.UniTuple) or len(data) != ndata:
+            raise TypeError(f"'data' ({data}) must be a tuple of length {ndata}")
 
         is_float_weight = isinstance(weight, types.Float)
-        is_tuple_weight = isinstance(weight, types.UniTuple) and len(weight) == len(data_schema)
+        is_tuple_weight = isinstance(weight, types.UniTuple) and len(weight) == ndata
 
         if not is_float_weight and not is_tuple_weight:
             raise TypeError(
                 f"'weight' ({weight}) must be a float or "
-                f"a tuple of floats of length {len(data_schema)}"
+                f"a tuple of floats of length {ndata}"
             )
 
         unified_type = typingctx.unify_types(data.dtype, weight if is_float_weight else weight.dtype)
-        return_type = types.Tuple([unified_type] * len(data_schema))
+        return_type = types.Tuple([unified_type] * ndata)
         sig = return_type(data, weight)
 
         def apply_weight_float_factory(p):
@@ -98,7 +99,7 @@ def apply_weight_factory(data_schema):
             llvm_ret_type = context.get_value_type(signature.return_type)
             return_tuple = cgutils.get_null_value(llvm_ret_type)
 
-            for p in range(len(data_schema)):
+            for p in range(ndata):
                 # Apply weights to data
                 sig = unified_type(data_type, weight_type)
                 factory = apply_weight_float_factory if is_float_weight else apply_weight_tuple_factory
@@ -112,13 +113,13 @@ def apply_weight_factory(data_schema):
     return apply_visibility_weights
 
 
-def store_data_factory(data_schema, store_index=-1):
-    """Returns an intrinsic that writes a :code:`len(data_schema)
-    tuple of values to an array at a given index"""
+def accumulate_data_factory(ndata, store_index=-1):
+    """Returns an intrinsic that accumulates a :code:`len(data_schema)`
+    tuple of values in an array at a given `store_index`"""
     @intrinsic
-    def store_data(typingctx, pol_tuple, array, index):
-        if (not isinstance(pol_tuple, types.UniTuple) or len(pol_tuple) != len(data_schema)):
-            raise TypeError(f"'pol_tuple' ({pol_tuple}) should be a {len(data_schema)} tuple")
+    def accumulate_data(typingctx, data_tuple, array, index):
+        if (not isinstance(data_tuple, types.UniTuple) or len(data_tuple) != ndata):
+            raise TypeError(f"'pol_tuple' ({data_tuple}) should be a {ndata} tuple")
 
         if (not isinstance(array, types.Array) or array.ndim != len(index) + 1):
             raise TypeError(f"'array' ({array}) should be a {len(index) + 1}D array")
@@ -126,30 +127,29 @@ def store_data_factory(data_schema, store_index=-1):
         if not isinstance(index, types.BaseTuple) or not all(isinstance(i, types.Integer) for i in index):
             raise TypeError(f"'index' {index} must be a tuple of integers")
 
-        sig = types.NoneType("none")(pol_tuple, array, index)
+        sig = types.NoneType("none")(data_tuple, array, index)
         # -1 signifies the store_index should be at the end of the tuple
-        insert_index = len(data_schema) if store_index < 0 else store_index
+        ii = ndata if store_index < 0 else store_index
 
         def assign_factory(pol):
             """ Index array with the first N-1 indices combined with pol"""
             def assign(value, array, index):
-                #array[index + (pol,)] = value[pol]
-                array[index[:insert_index] + (pol,) + index[insert_index:]] = value[pol]
+                array[index[:ii] + (pol,) + index[ii:]] += value[pol]
 
             return assign
 
         def codegen(context, builder, signature, args):
-            pol_tuple_type, array_type, index_type = signature.args
-            sig = types.NoneType("none")(pol_tuple_type, array_type, index_type)
+            data_tuple_type, array_type, index_type = signature.args
+            sig = types.NoneType("none")(data_tuple_type, array_type, index_type)
 
-            for p in range(len(data_schema)):
+            for p in range(ndata):
                 context.compile_internal(builder, assign_factory(p), sig, args)
 
             return None
 
         return sig, codegen
 
-    return store_data
+    return accumulate_data
 
 
 

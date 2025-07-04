@@ -7,8 +7,8 @@ import numpy as np
 def es_kernel_factory(betak: float) -> Callable:
   @intrinsic
   def es_kernel_positions(typingctx, position, index):
-    """Return a tuple of kernel index positions. 0 is returned if
-    the position lies outside the -1 to 1 range
+    """Return a tuple of kernel :code:`position - float(index)` position.
+    0 is returned if the position lies outside the -1 to 1 range
 
     Args:
       position: Tuple of kernel positions
