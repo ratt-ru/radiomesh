@@ -70,7 +70,7 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
       raise TypeError("'grid' must be a float")
 
     support = len(x_index)
-    half_support = support / 2
+    half_support = support / 2.0
     return_type = types.Tuple([x_index.dtype] * support)
     sig = return_type(x_index, grid)
 
