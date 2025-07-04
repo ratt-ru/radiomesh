@@ -19,20 +19,7 @@ from radiomesh.product import (
 )
 from radiomesh.utils import wgridder_conventions
 
-JIT_OPTIONS = {
-  "parallel": {
-    "comprehension": False,
-    "fusion": True,
-    "numpy": False,
-    "prange": True,
-    "reduction": False,
-    "setitem": False,
-    "stencil": False,
-  },
-  "nogil": True,
-  "cache": False,
-  "fastmath": True,
-}
+JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
 
 
 def parse_schema(schema: str) -> List[str]:
@@ -119,9 +106,7 @@ def wgrid_overload(
   pol_to_stokes = pol_to_stokes_factory(pol_schema, stokes_schema)
   es_kernel_pos, es_kernel = es_kernel_factory(BETA_K)
 
-  flag_reduce = numba.njit(**{**JIT_OPTIONS, "parallel": False})(
-    lambda a, f: a and f != 0
-  )
+  flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
   def impl(
     uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
