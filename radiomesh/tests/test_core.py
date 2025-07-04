@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from scipy.constants import c as lightspeed
+
+from radiomesh.constants import LIGHTSPEED
 
 pmp = pytest.mark.parametrize
 
@@ -23,7 +24,7 @@ def explicit_gridder(uvw, freq, ms, wgt, nxdirty, nydirty, xpixsize, ypixsize, a
     for chan in range(ms.shape[1]):
       phase = (
         freq[chan]
-        / lightspeed
+        / LIGHTSPEED
         * (x * uvw[row, 0] + y * uvw[row, 1] - uvw[row, 2] * nm1)
       )
       if wgt is None:
@@ -51,7 +52,7 @@ def test_grid_data(nx, ny, fov, nrow, nchan, precision):
   cell = fov * np.pi / 180 / nx
   f0 = 1e9
   freq = f0 + np.arange(nchan) * (f0 / nchan)
-  uvw = (np.random.rand(nrow, 3) - 0.5) / (cell * freq[-1] / lightspeed)
+  uvw = (np.random.rand(nrow, 3) - 0.5) / (cell * freq[-1] / LIGHTSPEED)
   vis = (
     np.random.rand(nrow, nchan) - 0.5 + 1j * (np.random.rand(nrow, nchan) - 0.5)
   ).astype(complex_type)
