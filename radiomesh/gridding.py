@@ -17,6 +17,7 @@ from radiomesh.product import (
   load_data_factory,
   pol_to_stokes_factory,
 )
+from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
 
@@ -95,6 +96,7 @@ def wgrid_overload(
   HALF_SUPPORT = SUPPORT // 2
   BETA_K = 2.3 * HALF_SUPPORT
   KERNEL_POSITION = tuple(float(p - HALF_SUPPORT) for p in range(SUPPORT))
+  U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   # Generate intrinsics
   load_vis_data = load_data_factory(len(pol_schema))
@@ -146,8 +148,8 @@ def wgrid_overload(
           stokes = pol_to_stokes(vis)
 
           # Pixel coordinates
-          u_pixel = (u * wavelengths[ch] + U_MAX) / U_CELL
-          v_pixel = (v * wavelengths[ch] + V_MAX) / V_CELL
+          u_pixel = (U_SIGN * u * wavelengths[ch] + U_MAX) / U_CELL
+          v_pixel = (V_SIGN * v * wavelengths[ch] + V_MAX) / V_CELL
 
           # Indices
           u_index = int(np.round(u_pixel))
