@@ -1,9 +1,9 @@
-from typing import Callable
+from typing import Callable, Dict, List, Tuple
 
 from numba.core import cgutils, types
 from numba.extending import intrinsic
 
-STOKES_CONVERSION = {
+STOKES_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
   "RR": {("I", "V"): lambda i, v: i + v + 0j},
   "RL": {("Q", "U"): lambda q, u: q + u * 1j},
   "LR": {("Q", "U"): lambda q, u: q - u * 1j},
@@ -14,7 +14,7 @@ STOKES_CONVERSION = {
   "YY": {("I", "Q"): lambda i, q: i - q + 0j},
 }
 
-POL_CONVERSION = {
+POL_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
   "I": {
     ("XX", "YY"): lambda xx, yy: (xx.real + yy.real) / 2.0,
     ("RR", "LL"): lambda rr, ll: (rr.real + ll.real) / 2.0,
@@ -72,7 +72,7 @@ def load_data_factory(ndata: int) -> Callable:
   return load_data
 
 
-def apply_weight_factory(ndata):
+def apply_weight_factory(ndata: int) -> Callable:
   """Returns an intrinsic that applies weight to a tuple of data"""
 
   @intrinsic
@@ -122,8 +122,8 @@ def apply_weight_factory(ndata):
   return apply_visibility_weights
 
 
-def accumulate_data_factory(ndata, store_index=-1):
-  """Returns an intrinsic that accumulates a :code:`len(data_schema)`
+def accumulate_data_factory(ndata: int, store_index: int = -1) -> Callable:
+  """Returns an intrinsic that accumulates a `ndata`
   tuple of values in an array at a given `store_index`"""
 
   @intrinsic
@@ -165,7 +165,7 @@ def accumulate_data_factory(ndata, store_index=-1):
   return accumulate_data
 
 
-def pol_to_stokes_factory(pol_schema, stokes_schema):
+def pol_to_stokes_factory(pol_schema: List[str], stokes_schema: List[str]) -> Callable:
   @intrinsic
   def converter(typingctx, data):
     if not isinstance(data, types.UniTuple) or len(data) != len(pol_schema):
