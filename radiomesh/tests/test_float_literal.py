@@ -1,13 +1,14 @@
 import numba
-from numba.core import types
-from numba.core.boxing import unbox, NativeValue
-from numba.core.datamodel.models import register_default, OpaqueModel
-from numba.cpython.builtins import lower_builtin, impl_ret_untracked
-
 import pytest
+from numba.core import types
+from numba.core.boxing import NativeValue, unbox
+from numba.core.datamodel.models import OpaqueModel, register_default
+from numba.cpython.builtins import impl_ret_untracked, lower_builtin
+
 
 class FloatLiteral(types.Literal, types.Dummy):
   pass
+
 
 @unbox(FloatLiteral)
 def unbox_float_literal(typ, obj, c):

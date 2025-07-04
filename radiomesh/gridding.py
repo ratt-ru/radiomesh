@@ -1,20 +1,20 @@
-from functools import reduce
 import math
+from functools import reduce
+from typing import List, Tuple
 
 import numba
-from numba.extending import overload
+import numpy as np
+import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue
-import numpy as np
-from typing import List
-
+from numba.extending import overload
 from scipy.constants import c as lightspeed
 
 from radiomesh.es_kernel import es_kernel_factory
 from radiomesh.product import (
-  load_data_factory,
   accumulate_data_factory,
   apply_weight_factory,
+  load_data_factory,
   pol_to_stokes_factory,
 )
 
@@ -25,24 +25,35 @@ def parse_schema(schema: str) -> List[str]:
   return [s.strip().upper() for s in schema.lstrip("[ ").rstrip("] ").split(",")]
 
 
-def wgrid_impl(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema):
+def wgrid_impl(
+  uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
+):
   pass
 
+
 @overload(wgrid_impl, jit_options=JIT_OPTIONS)
-def wgrid_overload(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema):
+def wgrid_overload(
+  uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
+):
   if not isinstance(uvw, types.Array) or not isinstance(uvw.dtype, types.Float):
     raise TypeError(f"'uvw' {uvw} must be a Float Array")
 
-  if not isinstance(visibilities, types.Array) or not isinstance(visibilities.dtype, types.Complex):
+  if not isinstance(visibilities, types.Array) or not isinstance(
+    visibilities.dtype, types.Complex
+  ):
     raise TypeError(f"'visibilities' {visibilities} must be a Complex Array")
 
-  if not isinstance(frequencies, types.Array) or not isinstance(frequencies.dtype, types.Float):
+  if not isinstance(frequencies, types.Array) or not isinstance(
+    frequencies.dtype, types.Float
+  ):
     raise TypeError(f"'frequencies' {frequencies} must be a Float Array")
 
   if not isinstance(weights, types.Array) or not isinstance(weights.dtype, types.Float):
     raise TypeError(f"'weights' {weights} must be a Float Array")
 
-  if not isinstance(flags, types.Array) or not isinstance(flags.dtype, (types.Integer, types.Boolean)):
+  if not isinstance(flags, types.Array) or not isinstance(
+    flags.dtype, (types.Integer, types.Boolean)
+  ):
     raise TypeError(f"'flags' {flags} must be a Integer or Boolean Array")
 
   if not isinstance(schema, types.StringLiteral):
@@ -64,8 +75,7 @@ def wgrid_overload(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, 
     pol_str, stokes_str = schema.literal_value.split("->")
   except ValueError as e:
     raise ValueError(
-      f"{schema} should be of the form "
-      f"[XX,XY,YX,YY] -> [I,Q,U,V]"
+      f"{schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
   pol_schema = parse_schema(pol_str)
@@ -97,7 +107,9 @@ def wgrid_overload(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, 
 
   flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
-  def impl(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema):
+  def impl(
+    uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
+  ):
     ntime, nbl, nchan, npol = visibilities.shape
 
     if npol != NPOL:
@@ -148,9 +160,13 @@ def wgrid_overload(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, 
           x_kernel = es_kernel(x_idx, u_pixel)
           y_kernel = es_kernel(y_idx, v_pixel)
 
-          for xfi, xk in zip(numba.literal_unroll(x_idx), numba.literal_unroll(x_kernel)):
+          for xfi, xk in zip(
+            numba.literal_unroll(x_idx), numba.literal_unroll(x_kernel)
+          ):
             xi = int(xfi)
-            for yfi, yk in zip(numba.literal_unroll(y_idx), numba.literal_unroll(y_kernel)):
+            for yfi, yk in zip(
+              numba.literal_unroll(y_idx), numba.literal_unroll(y_kernel)
+            ):
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(stokes, pol_weight)
@@ -163,7 +179,18 @@ def wgrid_overload(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, 
 
 
 @numba.njit(**{**JIT_OPTIONS, "parallel": False})
-def wgrid(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema):
+def wgrid(
+  uvw: npt.NDArray[np.floating],
+  visibilities: npt.NDArray[np.complexfloating],
+  weights: npt.NDArray[np.floating],
+  flags: npt.NDArray[np.integer],
+  frequencies: npt.NDArray[np.floating],
+  nx: int,
+  ny: int,
+  fov: str,
+  support: int,
+  schema: str,
+) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
     uvw,
     visibilities,
@@ -174,5 +201,5 @@ def wgrid(uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, 
     numba.literally(ny),
     numba.literally(fov),
     numba.literally(support),
-    numba.literally(schema)
+    numba.literally(schema),
   )
