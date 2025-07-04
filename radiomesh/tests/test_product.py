@@ -41,7 +41,15 @@ def test_accumulate_data():
   assert np.all(np.broadcast_to(np.arange(shape[0])[:, None], shape) * 2 == data)
 
 
-@pytest.mark.parametrize("pols,stokes", [(["XX", "XY", "YX", "YY"], ["I", "Q"])])
+@pytest.mark.parametrize(
+  "pols,stokes",
+  [
+    (["XX", "XY", "YX", "YY"], ["I", "Q", "U", "V"]),
+    (["RR", "RL", "LR", "LL"], ["I", "Q", "U", "V"]),
+    (["XX", "YY"], ["I", "Q"]),
+    (["RR", "LL"], ["I", "V"]),
+  ],
+)
 def test_pol_conversion(pols, stokes):
   """Test that converting from polarisation to stokes works.
   This depends on correctness of the conversion routines in POL_CONVERSION"""
