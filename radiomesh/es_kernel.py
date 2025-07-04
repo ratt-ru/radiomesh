@@ -76,7 +76,7 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
 
     def kernel_impl(x_index, grid):
       x = (x_index - grid + 0.5) / half_support
-      x = x if 1.0 <= x < 1.0 else 0.0
+      x = x if -1.0 <= x < 1.0 else 0.0
       return np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
 
     def codegen(context, builder, signature, args):
