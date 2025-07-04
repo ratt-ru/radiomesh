@@ -181,7 +181,6 @@ def wgrid_overload(
             for yfi, yk in zip(
               numba.literal_unroll(y_idx), numba.literal_unroll(y_kernel)
             ):
-              # print(u_index, v_index, xfi, yfi, xk, yk)
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(stokes, pol_weight)
