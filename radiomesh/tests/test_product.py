@@ -5,9 +5,34 @@ import pytest
 from radiomesh.product import (
   POL_CONVERSION,
   accumulate_data_factory,
+  apply_weight_factory,
   load_data_factory,
   pol_to_stokes_factory,
 )
+
+
+@pytest.mark.parametrize(
+  "data, weight",
+  [
+    [(1.0, 2.0), 3.0],
+    [(1.0, 2.0, 3.0), (3.0, 4.0, 5.0)],
+    [(1 + 2j, 3 + 4j), 4.0],
+    [(1 + 2j, 3 + 4j), (5 + 6j, 7 + 8j)],
+  ],
+)
+def test_apply_weights(data, weight):
+  apply_weight_intrinsic = apply_weight_factory(len(data))
+
+  @numba.njit
+  def apply_weights(d, w):
+    return apply_weight_intrinsic(d, w)
+
+  if not isinstance(weight, tuple):
+    expected = tuple(d * weight for d in data)
+  else:
+    expected = tuple(d * w for d, w in zip(data, weight))
+
+  assert apply_weights(data, weight) == expected
 
 
 def test_load_data():
