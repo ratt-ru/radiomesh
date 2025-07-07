@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Rename KERNEL_POSITION to KERNEL_OFFSET (:pr:`11`)
 * Add Github Action Issue and Pull Request templates (:pr:`10`)
 * Add changelog (:pr:`10`)
 * Incorporate wgridder_conventions (:pr:`9`)
