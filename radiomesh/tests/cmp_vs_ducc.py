@@ -3,12 +3,22 @@ import time
 
 import numpy as np
 
-from radiomesh.constants import LIGHTSPEED
 from radiomesh.gridding import wgrid
+from radiomesh.utils import image_params
 
 
 def do_ducc0_wgridding(
-  uvw, freq, vis, wgt, npix, cell_rad, epsilon=1e-4, precision="double", nthreads=1
+  uvw,
+  freq,
+  vis,
+  wgt,
+  nx,
+  ny,
+  pixsizex,
+  pixsizey,
+  epsilon=1e-4,
+  precision="double",
+  nthreads=1,
 ):
   try:
     from ducc0.wgridder import vis2dirty
@@ -27,7 +37,7 @@ def do_ducc0_wgridding(
 
   nrow, nchan, ncorr = vis.shape
 
-  dirty = np.zeros((ncorr, npix, npix), dtype=rtype)
+  dirty = np.zeros((ncorr, nx, ny), dtype=rtype)
 
   start = time.time()
   for c in range(ncorr):
@@ -36,10 +46,10 @@ def do_ducc0_wgridding(
       freq=freq,
       vis=vis[:, :, c],
       wgt=wgt[:, :, c],
-      npix_x=npix,
-      npix_y=npix,
-      pixsize_x=cell_rad,
-      pixsize_y=cell_rad,
+      npix_x=nx,
+      npix_y=ny,
+      pixsize_x=pixsizex,
+      pixsize_y=pixsizey,
       epsilon=epsilon,
       do_wgridding=False,
       nthreads=nthreads,
@@ -49,7 +59,7 @@ def do_ducc0_wgridding(
 
   print(
     f"Time taken to map ({nrow},{nchan},{ncorr}) to "
-    f"({ncorr},{npix},{npix}) = {time.time()-start}s"
+    f"({ncorr},{nx},{ny}) = {time.time()-start}s"
   )
 
 
@@ -80,18 +90,14 @@ if __name__ == "__main__":
   print(f"Visibility size {vis.nbytes / 1024.**3:.2f}GB")
   ms.close()
   freq = table(f"{args.ms}::SPECTRAL_WINDOW").getcol("CHAN_FREQ")[0]
-  uv_max = np.maximum(np.abs(uvw[:, 0]).max(), np.abs(uvw[:, 1]).max())
-  max_freq = freq.max()
-  cell_N = 1.0 / (2 * uv_max * max_freq / LIGHTSPEED)  # max cell size
-  cell_rad = cell_N / 2.0  # oversample by a factor of two
-  fov = 1.0  # field of view degrees
-  # import ipdb; ipdb.set_trace()
-  npix = int(fov / np.rad2deg(cell_rad))
-  if npix % 2:
-    npix += 1
+
+  fov = 1.0
+  oversampling = 2.0
+  epsilon = 1e-4
+  nx, ny, pixsizex, pixsizey = image_params(uvw, freq, fov, oversampling)
 
   if args.backend == "ducc0":
-    do_ducc0_wgridding(uvw, freq, vis, wgt, npix, cell_rad)
+    do_ducc0_wgridding(uvw, freq, vis, wgt, nx, ny, pixsizex, pixsizey, epsilon)
   elif args.backend == "radiomesh":
     (ntime,) = utime.shape
     # Reshape to (time, baseline, chan, corr)
@@ -108,15 +114,16 @@ if __name__ == "__main__":
       wgt,
       flags,
       freq,
-      npix,
-      npix,
-      str(fov),
-      7,
+      nx,
+      ny,
+      str(pixsizex),
+      str(pixsizey),
+      str(epsilon),
       "[XX,XY,YX,YY]->[I,Q,U,V]",
     )
     print(
       f"Time taken to map ({ntime},{nbl},{nchan},{ncorr}) "
-      f"to ({ncorr},{npix},{npix}) = {time.time()-start}s"
+      f"to ({ncorr},{nx},{ny}) = {time.time()-start}s"
     )
 
   else:
