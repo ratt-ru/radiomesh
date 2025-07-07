@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Return 0 for values where the ES kernel is undefined (:pr:`13`)
 * Fix construction of U from LR and RL (:pr:`12`)
 * Rename KERNEL_POSITION to KERNEL_OFFSET (:pr:`11`)
 * Add Github Action Issue and Pull Request templates (:pr:`10`)
