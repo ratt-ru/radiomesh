@@ -25,7 +25,7 @@ POL_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
   },
   "U": {
     ("XY", "YX"): lambda xy, yx: (xy.real + yx.real) / 2.0,
-    ("RL", "LR"): lambda rl, lr: (rl.imag + lr.imag) / 2.0,
+    ("RL", "LR"): lambda rl, lr: (rl.imag - lr.imag) / 2.0,
   },
   "V": {
     ("XY", "YX"): lambda xy, yx: (xy.imag - yx.imag) / 2.0,
