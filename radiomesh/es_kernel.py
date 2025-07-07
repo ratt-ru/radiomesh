@@ -9,7 +9,6 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
   @intrinsic
   def es_kernel_positions(typingctx, position, index):
     """Return a tuple of kernel :code:`position - float(index)` position.
-    0 is returned if the position lies outside the -1 to 1 range
 
     Args:
       position: Tuple of kernel positions
@@ -70,14 +69,19 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
       raise TypeError("'grid' must be a float")
 
     support = len(x_index)
-    half_support = support / 2
+    half_support = support / 2.0
     return_type = types.Tuple([x_index.dtype] * support)
     sig = return_type(x_index, grid)
 
     def kernel_impl(x_index, grid):
+      # Function is only defined for [-1.0, 1.0]
+      # Potentially evaluating SIMD. Prefer vectorisation
+      # followed by zeroing the result (if necessary)
       x = (x_index - grid + 0.5) / half_support
-      x = x if -1.0 <= x < 1.0 else 0.0
-      return np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
+      undefined = -1.0 <= x <= 1.0
+      x = 0.0 if undefined else x
+      result = np.exp(betak * (np.sqrt(1.0 - x * x) - 1.0))
+      return result if undefined else 0.0
 
     def codegen(context, builder, signature, args):
       x_index, grid = args
