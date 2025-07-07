@@ -15,14 +15,13 @@ def test_wgrid(nx, ny, fov, oversampling):
   shape = (100, 7 * 6 // 2, 64, 4)  # (ntime, nbl, nchan, npol)
   rng = np.random.default_rng()
 
-  pixsizex = fov * np.pi / 180.0 / nx
-  pixsizey = fov * np.pi / 180.0 / ny
+  pixsize = fov * np.pi / 180.0 / nx
 
   # Simulate some frequencies and uvws
   # given some initial parameters above
   freqs = np.linspace(0.856e9, 2 * 0.856e9, shape[2])
   uvw = rng.random(shape[:2] + (3,)) - 0.5
-  uvw /= pixsizex * freqs[0] / LIGHTSPEED
+  uvw /= pixsize * freqs[0] / LIGHTSPEED
 
   vis = rng.random(shape) + 0j
   vis += rng.random(shape) * 1j
