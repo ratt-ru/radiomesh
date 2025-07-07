@@ -1,4 +1,3 @@
-import math
 from functools import reduce
 from typing import List, Tuple
 
@@ -10,7 +9,7 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import overload
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.es_kernel import es_kernel_factory
+from radiomesh.es_kernel import ESKernelParameters, es_kernel_factory
 from radiomesh.product import (
   accumulate_data_factory,
   apply_weight_factory,
@@ -27,14 +26,34 @@ def parse_schema(schema: str) -> List[str]:
 
 
 def wgrid_impl(
-  uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
+  uvw,
+  visibilities,
+  weights,
+  flags,
+  frequencies,
+  nx,
+  ny,
+  pixsizex,
+  pixsizey,
+  epsilon,
+  schema,
 ):
   pass
 
 
 @overload(wgrid_impl, jit_options=JIT_OPTIONS)
 def wgrid_overload(
-  uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
+  uvw,
+  visibilities,
+  weights,
+  flags,
+  frequencies,
+  nx,
+  ny,
+  pixsizex,
+  pixsizey,
+  epsilon,
+  schema,
 ):
   if not isinstance(uvw, types.Array) or not isinstance(uvw.dtype, types.Float):
     raise TypeError(f"'uvw' {uvw} must be a Float Array")
@@ -60,17 +79,20 @@ def wgrid_overload(
   if not isinstance(schema, types.StringLiteral):
     raise RequireLiteralValue(f"'schema' {schema} is not a string literal")
 
-  if not isinstance(support, types.IntegerLiteral):
-    raise RequireLiteralValue(f"'support' {support} is not a int literal")
-
   if not isinstance(nx, types.IntegerLiteral):
     raise RequireLiteralValue(f"'nx' {nx} is not a int literal")
 
   if not isinstance(ny, types.IntegerLiteral):
     raise RequireLiteralValue(f"'ny' {ny} is not a int literal")
 
-  if not isinstance(fov, types.StringLiteral):
-    raise RequireLiteralValue(f"'fov' {fov} is not a string literal")
+  if not isinstance(pixsizex, types.StringLiteral):
+    raise RequireLiteralValue(f"'pixsizex' {pixsizex} is not a string literal")
+
+  if not isinstance(pixsizey, types.StringLiteral):
+    raise RequireLiteralValue(f"'pixsizey' {pixsizey} is not a string literal")
+
+  if not isinstance(epsilon, types.StringLiteral):
+    raise RequireLiteralValue(f"'epsilon' {epsilon} is not a string literal")
 
   try:
     pol_str, stokes_str = schema.literal_value.split("->")
@@ -79,21 +101,22 @@ def wgrid_overload(
       f"{schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
+  kernel_params = ESKernelParameters(float(epsilon.literal_value))
+
   pol_schema = parse_schema(pol_str)
   stokes_schema = parse_schema(stokes_str)
   NPOL = len(pol_schema)
   NSTOKES = len(stokes_schema)
   NX = nx.literal_value
   NY = ny.literal_value
-  FOV = float(fov.literal_value)
-  CELL_SIZE_X = FOV * math.pi / 180.0 / NX
-  CELL_SIZE_Y = FOV * math.pi / 180.0 / NY
+  CELL_SIZE_X = float(pixsizex.literal_value)
+  CELL_SIZE_Y = float(pixsizey.literal_value)
   U_CELL = 1.0 / (NX * CELL_SIZE_X)
   V_CELL = 1.0 / (NY * CELL_SIZE_Y)
   U_MAX = 1.0 / CELL_SIZE_X / 2.0
   V_MAX = 1.0 / CELL_SIZE_Y / 2.0
-  SUPPORT = support.literal_value
-  HALF_SUPPORT = SUPPORT // 2
+  SUPPORT = kernel_params.support
+  HALF_SUPPORT = kernel_params.half_support
   BETA_K = 2.3 * HALF_SUPPORT
   KERNEL_OFFSET = tuple(float(p - HALF_SUPPORT) for p in range(SUPPORT))
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
@@ -109,7 +132,17 @@ def wgrid_overload(
   flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
   def impl(
-    uvw, visibilities, weights, flags, frequencies, nx, ny, fov, support, schema
+    uvw,
+    visibilities,
+    weights,
+    flags,
+    frequencies,
+    nx,
+    ny,
+    pixsizex,
+    pixsizey,
+    epsilon,
+    schema,
   ):
     ntime, nbl, nchan, npol = visibilities.shape
 
@@ -188,8 +221,9 @@ def wgrid(
   frequencies: npt.NDArray[np.floating],
   nx: int,
   ny: int,
-  fov: str,
-  support: int,
+  pixsizex: float,
+  pixsizey: float,
+  epsilon: float,
   schema: str,
 ) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
@@ -200,7 +234,8 @@ def wgrid(
     frequencies,
     numba.literally(nx),
     numba.literally(ny),
-    numba.literally(fov),
-    numba.literally(support),
+    numba.literally(pixsizex),
+    numba.literally(pixsizey),
+    numba.literally(epsilon),
     numba.literally(schema),
   )

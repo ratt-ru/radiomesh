@@ -1,3 +1,5 @@
+import math
+from dataclasses import dataclass
 from typing import Callable, Tuple
 
 import numpy as np
@@ -100,3 +102,46 @@ def es_kernel_factory(betak: float) -> Tuple[Callable, Callable]:
     return sig, codegen
 
   return es_kernel_positions, es_kernel
+
+
+DEFAULT_EPSILON: float = 2e-13
+DEFAULT_OVERSAMPLING: int = 2
+DEFAULT_BETA: float = 2.3
+DEFAULT_E0: float = 0.5
+
+
+@dataclass
+class ESKernelParameters:
+  """Dataclass holding parameters defining an ES kernel of the form
+  :code:`math.exp(beta * (math.pow(1.0 - x * x, 0.5) - 1.0))`
+  """
+
+  # Desired wgridder accuracy
+  epsilon: float
+  # ES kernel parameters
+  # Kernel support
+  support: int
+  # Oversampling factor.
+  # Corresponds to :code:`ofactor` within the ducc0 wgridder code base
+  oversampling: int
+  beta: float
+  e0: float
+
+  def __init__(
+    self,
+    epsilon: float = DEFAULT_EPSILON,
+    oversampling: int = DEFAULT_OVERSAMPLING,
+    beta: float = DEFAULT_BETA,
+    e0=DEFAULT_E0,
+    wgridding: bool = False,
+  ):
+    self.epsilon = epsilon
+    self.oversampling = oversampling
+    wgrid_factor = 3.0 if wgridding else 2.0
+    self.support = int(math.ceil(math.log10(wgrid_factor * 1.0 / epsilon))) + 1
+    self.beta = beta
+    self.e0 = e0
+
+  @property
+  def half_support(self, integer=False) -> int | float:
+    return self.support // 2 if integer else self.support / 2.0
