@@ -95,7 +95,7 @@ def wgrid_overload(
   SUPPORT = support.literal_value
   HALF_SUPPORT = SUPPORT // 2
   BETA_K = 2.3 * HALF_SUPPORT
-  KERNEL_POSITION = tuple(float(p - HALF_SUPPORT) for p in range(SUPPORT))
+  KERNEL_OFFSET = tuple(float(p - HALF_SUPPORT) for p in range(SUPPORT))
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   # Generate intrinsics
@@ -155,8 +155,8 @@ def wgrid_overload(
           u_index = int(np.round(u_pixel))
           v_index = int(np.round(v_pixel))
 
-          x_idx = es_kernel_pos(KERNEL_POSITION, u_index)
-          y_idx = es_kernel_pos(KERNEL_POSITION, v_index)
+          x_idx = es_kernel_pos(KERNEL_OFFSET, u_index)
+          y_idx = es_kernel_pos(KERNEL_OFFSET, v_index)
 
           x_kernel = es_kernel(x_idx, u_pixel)
           y_kernel = es_kernel(y_idx, v_pixel)
