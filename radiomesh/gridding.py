@@ -10,9 +10,10 @@ from numba.extending import overload
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import ESKernelParameters, es_kernel_factory
-from radiomesh.product import (
+from radiomesh.intrinsics import (
   accumulate_data_factory,
   apply_weight_factory,
+  check_args_factory,
   load_data_factory,
   pol_to_stokes_factory,
 )
@@ -105,7 +106,6 @@ def wgrid_overload(
 
   pol_schema = parse_schema(pol_str)
   stokes_schema = parse_schema(stokes_str)
-  NPOL = len(pol_schema)
   NSTOKES = len(stokes_schema)
   NX = nx.literal_value
   NY = ny.literal_value
@@ -128,6 +128,7 @@ def wgrid_overload(
   accumulate_data = accumulate_data_factory(len(stokes_schema), 0)
   pol_to_stokes = pol_to_stokes_factory(pol_schema, stokes_schema)
   es_kernel_pos, es_kernel = es_kernel_factory(BETA_K)
+  check_args = check_args_factory(pol_schema)
 
   flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
@@ -144,19 +145,8 @@ def wgrid_overload(
     epsilon,
     schema,
   ):
-    ntime, nbl, nchan, npol = visibilities.shape
-
-    if npol != NPOL:
-      raise ValueError(
-        f"Number of schema {pol_str} ({npol}) "
-        f"and visibility polarisations {NPOL} differ."
-      )
-
-    if frequencies.shape[0] != visibilities.shape[2]:
-      raise ValueError(
-        f"visibility {visibilities.shape[2]} and "
-        f"frequency {frequencies.shape[0]} shapes differ"
-      )
+    check_args(uvw, visibilities, weights, flags, frequencies)
+    ntime, nbl, nchan, _ = visibilities.shape
 
     wavelengths = frequencies / LIGHTSPEED
 
