@@ -1,7 +1,7 @@
 from typing import Callable, Dict, List, Tuple
 
 from numba.core import cgutils, types
-from numba.extending import intrinsic
+from numba.extending import intrinsic, register_jitable
 
 STOKES_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
   "RR": {("I", "V"): lambda i, v: i + v + 0j},
@@ -226,3 +226,37 @@ def pol_to_stokes_factory(pol_schema: List[str], stokes_schema: List[str]) -> Ca
     return sig, codegen
 
   return converter
+
+
+def check_args_factory(pol_schema: List[str]) -> Callable:
+  """Generate a callable that checks the shapes of the wgridder input arguments
+  against each other, and the shape of the polarisation schema"""
+  npol = len(pol_schema)
+  pol_schema_str = str(pol_schema)
+
+  @register_jitable
+  def check_args(uvw, visibilities, weights, flags, frequencies):
+    if not (visibilities.shape == weights.shape == flags.shape):
+      raise ValueError("Shapes of visibilities, weights and flags do not match")
+
+    if uvw.shape[:-1] != visibilities.shape[:-2]:
+      raise ValueError(
+        "uvw and visibility shapes do not match " "in the primary dimensions"
+      )
+
+    if uvw.shape[-1] != 3:
+      raise ValueError("The last axis of the uvw should have 3 components")
+
+    if visibilities.shape[-1] != npol:
+      raise ValueError(
+        f"Number of visibility polarisations "
+        f"does not match the number of schema polarisations {pol_schema_str} "
+      )
+
+    if frequencies.shape[0] != visibilities.shape[-2]:
+      raise ValueError(
+        "Frequency shape does not match the visibility shape "
+        "in the frequency dimension"
+      )
+
+  return check_args

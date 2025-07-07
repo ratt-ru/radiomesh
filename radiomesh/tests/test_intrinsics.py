@@ -2,7 +2,7 @@ import numba
 import numpy as np
 import pytest
 
-from radiomesh.product import (
+from radiomesh.intrinsics import (
   POL_CONVERSION,
   accumulate_data_factory,
   apply_weight_factory,
