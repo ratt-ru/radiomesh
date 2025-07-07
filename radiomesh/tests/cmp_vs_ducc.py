@@ -114,7 +114,7 @@ if __name__ == "__main__":
       wgt,
       flags,
       freq,
-      ny,
+      nx,
       ny,
       str(pixsizex),
       str(pixsizey),
