@@ -9,7 +9,7 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import overload
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.es_kernel import ESKernelParameters, es_kernel_factory
+from radiomesh.es_kernel import ESKernel
 from radiomesh.intrinsics import (
   accumulate_data_factory,
   apply_weight_factory,
@@ -102,7 +102,7 @@ def wgrid_overload(
       f"{schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
-  kernel_params = ESKernelParameters(float(epsilon.literal_value))
+  es_kernel = ESKernel(float(epsilon.literal_value))
 
   pol_schema = parse_schema(pol_str)
   stokes_schema = parse_schema(stokes_str)
@@ -115,10 +115,6 @@ def wgrid_overload(
   V_CELL = 1.0 / (NY * PIXSIZEY)
   U_MAX = 1.0 / PIXSIZEX / 2.0
   V_MAX = 1.0 / PIXSIZEY / 2.0
-  SUPPORT = kernel_params.support
-  HALF_SUPPORT = kernel_params.half_support
-  BETA_K = 2.3 * HALF_SUPPORT
-  KERNEL_OFFSET = tuple(float(p - HALF_SUPPORT) for p in range(SUPPORT))
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   # Generate intrinsics
@@ -127,7 +123,8 @@ def wgrid_overload(
   apply_weights = apply_weight_factory(len(pol_schema))
   accumulate_data = accumulate_data_factory(len(stokes_schema), 0)
   pol_to_stokes = pol_to_stokes_factory(pol_schema, stokes_schema)
-  es_kernel_pos, es_kernel = es_kernel_factory(BETA_K)
+  es_kernel_pos = es_kernel.position_intrinsic
+  eval_es_kernel = es_kernel.kernel_intrinsic
   check_args = check_args_factory(pol_schema)
 
   flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
@@ -178,11 +175,11 @@ def wgrid_overload(
           u_index = int(np.round(u_pixel))
           v_index = int(np.round(v_pixel))
 
-          x_idx = es_kernel_pos(KERNEL_OFFSET, u_index)
-          y_idx = es_kernel_pos(KERNEL_OFFSET, v_index)
+          x_idx = es_kernel_pos(u_index)
+          y_idx = es_kernel_pos(v_index)
 
-          x_kernel = es_kernel(x_idx, u_pixel)
-          y_kernel = es_kernel(y_idx, v_pixel)
+          x_kernel = eval_es_kernel(x_idx, u_pixel)
+          y_kernel = eval_es_kernel(y_idx, v_pixel)
 
           for xfi, xk in zip(
             numba.literal_unroll(x_idx), numba.literal_unroll(x_kernel)
