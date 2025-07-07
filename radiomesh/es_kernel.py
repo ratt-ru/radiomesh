@@ -143,5 +143,5 @@ class ESKernelParameters:
     self.e0 = e0
 
   @property
-  def half_support(self, integer=False) -> int | float:
-    return self.support // 2 if integer else self.support / 2.0
+  def half_support(self) -> float:
+    return self.support / 2.0
