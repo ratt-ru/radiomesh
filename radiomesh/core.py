@@ -1,3 +1,4 @@
+from functools import partial
 import numpy as np
 import numba
 from numba import njit, literally, types
@@ -6,6 +7,7 @@ from scipy.constants import c as lightspeed
 import sympy as sm
 from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
+from ducc0.fft import good_size
 
 
 JIT_OPTIONS = {
@@ -19,11 +21,13 @@ def wgridder_conventions(l0, m0):
     '''
     Returns
 
-    flip_u, flip_v, flip_w, x0, y0
+        flip_u, flip_v, flip_w, x0, y0
 
-    according to the conventions documented here https://github.com/mreineck/ducc/issues/34
+    according to the conventions documented here
+     
+        https://github.com/mreineck/ducc/issues/34
 
-    These conventions are chosen to math the wgridder in ducc
+    These conventions are chosen to match the wgridder in ducc
     '''
     return False, True, False, -l0, -m0
 
@@ -33,13 +37,27 @@ def wgridder_conventions(l0, m0):
 # 8, 1.40, 3.1679034e-05, 1.83155364990234371, 0.516968027750650871  (single precision)
 # 8, 1.40, 8.5117152e-06, 1.82943505181206612, 0.517185719807942368  (double precision)
 
-
+def grid_corrector(ng, supp, beta, alpha, nroots=32):
+    # even number of roots required to exploit even symmetry of integrand
+    if nroots%2:
+        nroots += 1
+    dom = np.linspace(-0.5, 0.5, ng, endpoint=False)
+    q, wgt = np.polynomial.legendre.leggauss(nroots)
+    idx = q > 0
+    q = q[idx]
+    wgt = wgt[idx]
+    z = np.outer(dom, q)
+    xkern = np.zeros(q.size)
+    _es_kernel(q, xkern, supp*beta, alpha)
+    tmp = np.sum(np.cos(np.pi*supp*z) * xkern[None, :] * wgt[None, :], axis=-1)
+    return supp*tmp
 
 @njit(**JIT_OPTIONS, inline='always')
-def _es_kernel(x, y, xkern, ykern, betak, alphak):
-    for i in range(x.size):
-        xkern[i] = np.exp(betak*(pow(1-x[i]*x[i], alphak) - 1))
-        ykern[i] = np.exp(betak*(pow(1-y[i]*y[i], alphak) - 1))
+def _es_kernel(x, kern, betak, alphak):
+    oneminxsq = (1 - x) * (1 + x)
+    mx = oneminxsq <= 1
+    kern[mx] = np.exp(betak*(pow(oneminxsq[mx], alphak) - 1))
+    return kern
 
 
 @njit(**JIT_OPTIONS)
@@ -66,25 +84,36 @@ def _grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
 @overload(_grid_data_impl, prefer_literal=True,
           jit_options={**JIT_OPTIONS, "parallel":True})
 def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
-                      ant1, ant2, nx, ny, nx_psf, ny_psf, k, pol, product, nc):
+                      ant1, ant2, nx, ny, pol, product, nc,
+                      padding=2.0, supp=8, beta=2.3, alpha=0.5):
 
     vis_func, wgt_func = stokes_funcs(data, jones, product, pol, nc)
-
-    if product.literal_value in ['I','Q','U','V']:
-        ns = 1
-    elif product.literal_value == 'DS':
-        ns = 2
-    elif product.literal_value == 'FS':
-        ns = int(nc.literal_value)
-    
+    ns = len(product.literal_value)    
     flip_u, flip_v, flip_w, x0, y0 = wgridder_conventions(x0, y0)
     usign = -1.0 if flip_u else 1.0
     vsign = -1.0 if flip_v else 1.0
+    
+    ngx = good_size(int(padding*nx))
+    # make sure it is even and a good size for the FFT
+    while ngx%2:
+        ngx = good_size(ngx+1)
+    xcorrector = grid_corrector(ngx, supp, beta, alpha)
+    padxl = (ngx-nx)//2
+    padxr = ngx-nx-padxl
+    slcx = slice(padxl, padxr)
+    ngy = good_size(int(padding*ny))
+    # make sure it is even and a good size for the FFT
+    while ngy%2:
+        ngy = good_size(ngy+1)
+    ycorrector = grid_corrector(ngy, supp, beta, alpha)
+    padyl = (ngy-ny)//2
+    padyr = ngy-ny-padyl
+    slcy = slice(padyl, padyr)
 
     def _impl(data, weight, flag, uvw, freq, jones, tbin_idx, tbin_counts,
               ant1, ant2, nx, ny, cell_size_x, cell_size_y,
               pol, product, nc,
-              k=8, betak=1.83155364990234371, alpha=0.516968027750650871):
+              supp, beta, alpha):
         # for dask arrays we need to adjust the chunks to
         # start counting from zero
         tbin_idx -= tbin_idx.min()
@@ -97,18 +126,18 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
         u_cell = 1/(nx*cell_size_x)
         # shifts fftfreq such that they start at zero
         # convenient to look up the pixel value
-        umax = np.abs(-1/cell_size_x/2 - u_cell/2)
+        umax = 1/cell_size_x/2
 
         # vfreq
         v_cell = 1/(ny*cell_size_y)
-        vmax = np.abs(-1/cell_size_y/2 - v_cell/2)
+        vmax = 1/cell_size_y/2
 
         normfreq = freq / lightspeed
-        ko2 = k/2
-        betak = 2.3*k
-        pos = np.arange(k) - ko2
-        xkern = np.zeros(k)
-        ykern = np.zeros(k)
+        ko2 = supp/2
+        betak = beta*supp
+        pos = np.arange(supp) - ko2
+        xkern = np.zeros(supp)
+        ykern = np.zeros(supp)
         for t in range(nt):
             for row in range(tbin_idx[t],
                              tbin_idx[t] + tbin_counts[t]):
@@ -142,10 +171,11 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
                     # the kernel is separable and only defined on [-1,1]
                     # do we ever need to check these bounds?
                     x_idx = pos + u_idx
-                    x = (x_idx - ug + 0.5)/ko2
+                    x = (x_idx - ug)/ko2
+                    _es_kernel(x, xkern, betak)
                     y_idx = pos + v_idx
-                    y = (y_idx - vg + 0.5)/ko2
-                    _es_kernel(x, y, xkern, ykern, betak)
+                    y = (y_idx - vg)/ko2
+                    _es_kernel(y, ykern, betak)
 
                     for c in range(ncorr):
                         wc = wgt[c]
@@ -210,29 +240,32 @@ def stokes_funcs(data, jones, product, pol, nc):
     # Only keep diagonal of weights
     W = W.diagonal().T  # diagonal() returns row vector
 
-    if product.literal_value == 'I':
-        i = (0,)
-    elif product.literal_value == 'Q':
-        i = (1,)
-    elif product.literal_value == 'U':
-        i = (2,)
-    elif product.literal_value == 'V':
-        i = (3,)
-    elif product.literal_value == 'DS':
-        if pol.literal_value == 'linear':
-            i = (0,1)
-        elif pol.literal_value == 'circular':
-            i = (0,-1)
-    elif product.literal_value == 'FS':
-        if nc.literal_value == '2':
-            if pol.literal_value == 'linear':
-                i = (0,1)
-            elif pol.literal_value == 'circular':
-                i = (0,-1)
-        elif nc.literal_value == '4':
-            i = (0,1,2,3)
-    else:
-        raise ValueError(f"Unknown polarisation product {product}")
+    # this should ensure that outputs are always ordered as
+    # [I, Q, U, V]
+    i = ()
+    if 'I' in product.literal_value:
+        i += (0,)
+
+    if 'Q' in product.literal_value:
+        i += (1,)
+        if pol.literal_value == 'circular' and nc.literal_value == '2':
+            raise ValueError("Q is not available in circular polarisation with 2 correlations")
+
+    if 'U' in product.literal_value:
+        i += (2,)
+        if pol.literal_value == 'linear' and nc.literal_value == '2':
+            raise ValueError("U is not available in linear polarisation with 2 correlations")
+        elif pol.literal_value == 'circular' and nc.literal_value == '2':
+            raise ValueError("U is not available in circular polarisation with 2 correlations")
+
+    if 'V' in product.literal_value:
+        i += (3,)
+        if pol.literal_value == 'linear' and nc.literal_value == '2':
+            raise ValueError("V is not available in linear polarisation with 2 correlations")
+
+    remprod = product.literal_value.strip('IQUV')
+    if len(remprod):
+        raise ValueError(f"Unknown polarisation product {remprod}")
 
     if jones.ndim == 6:  # Full mode
         Wsymb = lambdify((gp00, gp01, gp10, gp11,
