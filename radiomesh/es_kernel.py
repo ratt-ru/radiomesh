@@ -113,7 +113,7 @@ class ESKernel:
   support: int = dataclasses.field(init=False)
 
   def __post_init__(self):
-    """Determine the support fiven the other kernel parameters"""
+    """Determine the support given the other kernel parameters"""
     factor = 3.0 if self.wgridding else 2.0
     self.support = int(math.ceil(math.log10(factor * 1.0 / self.epsilon))) + 1
 
