@@ -1,43 +1,39 @@
 import numba
 import pytest
-from numba.core import types
-from numba.core.boxing import NativeValue, unbox
-from numba.core.datamodel.models import OpaqueModel, register_default
-from numba.cpython.builtins import impl_ret_untracked, lower_builtin
-
-
-class FloatLiteral(types.Literal, types.Dummy):
-  pass
-
-
-@unbox(FloatLiteral)
-def unbox_float_literal(typ, obj, c):
-  return NativeValue(c.context.get_dummy_value())
-
-
-@lower_builtin(float, FloatLiteral)
-def float_literal_impl(context, builder, sig, args):
-  [ty] = sig.args
-  res = context.get_constant(sig.return_type, float(ty.literal_value))
-  return impl_ret_untracked(context, builder, sig.return_type, res)
-
-
-register_default(FloatLiteral)(OpaqueModel)
-
-
-@numba.njit
-def f(value):
-  print(numba.literally(value))
+from numba import types
+from numba.core.errors import RequireLiteralValue
+from numba.extending import overload
 
 
 @pytest.fixture
-def install_float_literal():
-  types.Literal.ctor_map[float] = FloatLiteral
-  yield
+def float_literal_cls():
+  from radiomesh.literals import install_float_literal
+
+  FloatLiteral = install_float_literal()
+
+  yield FloatLiteral
   del types.Literal.ctor_map[float]
 
 
-@pytest.mark.xfail(reason="Needs more work for this to succeed")
-def test_float_literal(with_float_literal):
-  v = FloatLiteral(10.0)
-  f(v)
+def test_float_literal_overload(float_literal_cls):
+  """Test that a FloatLiteral is recognised by @overload"""
+  # The type is registered with the base Literal constructor map
+  assert types.Literal.ctor_map[float] is float_literal_cls
+
+  float_value = 10.0
+
+  def f_impl(value):
+    pass
+
+  @overload(f_impl)
+  def f_overload(value):
+    if not isinstance(value, float_literal_cls):
+      raise RequireLiteralValue(f"value {value} must be a FloatLiteral")
+    assert value.literal_value == float_value
+    return lambda value: None
+
+  @numba.njit
+  def f(value):
+    return f_impl(numba.literally(value))
+
+  f(float_value)
