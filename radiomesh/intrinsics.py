@@ -72,8 +72,9 @@ def load_data_factory(ndata: int) -> Callable:
   return load_data
 
 
-def apply_weight_factory(ndata: int) -> Callable:
-  """Returns an intrinsic that applies weight to a tuple of data"""
+def apply_weight_factory(ndata: int, flags: bool = False) -> Callable:
+  """Returns an intrinsic that applies weight to a tuple of data.
+  If ``flags`` is True the data will be zeroed where weights are non-zero"""
 
   @intrinsic
   def apply_visibility_weights(typingctx, data, weight):
@@ -86,7 +87,7 @@ def apply_weight_factory(ndata: int) -> Callable:
     if not is_float_weight and not is_tuple_weight:
       raise TypeError(
         f"'weight' ({weight}) must be a float or "
-        f"a tuple of floats of length {ndata}"
+        f"a tuple of values of length {ndata}"
       )
 
     unified_type = typingctx.unify_types(
@@ -96,10 +97,13 @@ def apply_weight_factory(ndata: int) -> Callable:
     sig = return_type(data, weight)
 
     def apply_weight_float_factory(p):
-      return lambda t, w: t[p] * w
+      return lambda d, w: d[p] * w
 
     def apply_weight_tuple_factory(p):
-      return lambda t, w: t[p] * w[p]
+      if flags:
+        return lambda d, f: d[p] if f[p] == 0 else 0
+
+      return lambda d, w: d[p] * w[p]
 
     def codegen(context, builder, signature, args):
       data_type, weight_type = signature.args

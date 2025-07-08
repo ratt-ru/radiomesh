@@ -121,6 +121,7 @@ def wgrid_overload(
   load_vis_data = load_data_factory(len(pol_schema))
   load_uvw_data = load_data_factory(len(["U", "V", "W"]))
   apply_weights = apply_weight_factory(len(pol_schema))
+  apply_flags = apply_weight_factory(len(pol_schema), True)
   accumulate_data = accumulate_data_factory(len(stokes_schema), 0)
   pol_to_stokes = pol_to_stokes_factory(pol_schema, stokes_schema)
   es_kernel_pos = es_kernel.position_intrinsic
@@ -164,6 +165,7 @@ def wgrid_overload(
 
           vis = load_vis_data(visibilities, (t, bl, ch))
           wgt = load_vis_data(weights, (t, bl, ch))
+          wgt = apply_flags(wgt, vis_flag)
           vis = apply_weights(vis, wgt)
           stokes = pol_to_stokes(vis)
 
@@ -175,18 +177,22 @@ def wgrid_overload(
           u_index = int(np.round(u_pixel))
           v_index = int(np.round(v_pixel))
 
-          x_idx = es_kernel_pos(u_index)
-          y_idx = es_kernel_pos(v_index)
+          # Tuples of indices of length kernel.support
+          # centred on {u,v}_index
+          x_indices = es_kernel_pos(u_index)
+          y_indices = es_kernel_pos(v_index)
 
-          x_kernel = eval_es_kernel(x_idx, u_pixel)
-          y_kernel = eval_es_kernel(y_idx, v_pixel)
+          # Tuples of kernel values of length kernel.support
+          # generated from (index - pixel)
+          x_kernel = eval_es_kernel(x_indices, u_pixel)
+          y_kernel = eval_es_kernel(y_indices, v_pixel)
 
           for xfi, xk in zip(
-            numba.literal_unroll(x_idx), numba.literal_unroll(x_kernel)
+            numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
           ):
             xi = int(xfi)
             for yfi, yk in zip(
-              numba.literal_unroll(y_idx), numba.literal_unroll(y_kernel)
+              numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
             ):
               pol_weight = xk * yk
               yi = int(yfi)
