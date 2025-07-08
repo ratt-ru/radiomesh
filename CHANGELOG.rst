@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Apply flags in gridding kernel (:pr:`18`)
 * Refine FloatLiteral implementation (:pr:`17`)
 * Move kernel functionality into ESKernel class (:pr:`16`)
 * Move gridder argument checks into a separate function (:pr:`15`)
