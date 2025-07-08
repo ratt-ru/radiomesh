@@ -1,6 +1,9 @@
 import numba
 import numpy as np
 import pytest
+from numba import types
+from numba.core.errors import RequireLiteralValue
+from numba.extending import intrinsic
 
 from radiomesh.intrinsics import (
   POL_CONVERSION,
@@ -112,3 +115,38 @@ def test_pol_conversion(pols, stokes):
   values = np.random.random(len(pols)) + np.random.random(len(pols)) * 1j
   expected = tuple(fn(values[p1], values[p2]) for p1, p2, fn in mapping)
   assert convert(tuple(values)) == expected
+
+
+@intrinsic
+def add_intrinsic(typingctx, array, value):
+  """Adds a literal value to an array"""
+  if not isinstance(value, types.IntegerLiteral):
+    raise RequireLiteralValue(f"{value}")
+
+  av = float(value.literal_value)
+
+  def codegen(context, builder, sig, args):
+    return context.compile_internal(builder, lambda a, v: a + av, sig, args)
+
+  return array(array, value), codegen
+
+
+@numba.njit(cache=True, nogil=True)
+def jitted_intrinsic(a, v):
+  """It's useful to search for any references to this function in the assembly output"""
+  return add_intrinsic(a, numba.literally(v))
+
+
+def test_intrinsic_caching():
+  """This test case isn't that interesting in terms of comparing values,
+  but is useful for testing intrinsic caching in conjunction with NUMBA_DEBUG_CACHE=1"""
+
+  @numba.njit(cache=True, nogil=True)
+  def g(a, v):
+    return jitted_intrinsic(a, v)
+
+  @numba.njit(cache=True, nogil=True)
+  def h(a, v):
+    return add_intrinsic(a, numba.literally(v))
+
+  np.testing.assert_array_equal(g(np.ones(10), 1) + 1, h(np.ones(10), 2))
