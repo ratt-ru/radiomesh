@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Add a compound literal test case (:pr:`19`)
 * Apply flags in gridding kernel (:pr:`18`)
 * Refine FloatLiteral implementation (:pr:`17`)
 * Move kernel functionality into ESKernel class (:pr:`16`)
