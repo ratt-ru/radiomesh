@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Avoid hard-coding types in the kernel positions intrinsic (:pr:`21`)
 * Add a compound literal test case (:pr:`19`, :pr:`20`)
 * Apply flags in gridding kernel (:pr:`18`)
 * Refine FloatLiteral implementation (:pr:`17`)
