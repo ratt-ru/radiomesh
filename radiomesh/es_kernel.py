@@ -142,7 +142,7 @@ class ESKernel:
       value = np.exp(BETA * HALF_SUPPORT * (np.sqrt(1.0 - x * x) - 1.0))
       # Above is only defined for [-1.0, 1.0]
       # Zero after possible vectorisation (SIMD) of the above expression
-      return value if x <= -1.0 and x <= 1.0 else 0.0
+      return value if -1.0 <= x <= 1.0 else 0.0
 
     return kernel
 
