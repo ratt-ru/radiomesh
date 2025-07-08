@@ -33,13 +33,14 @@ def es_kernel_positions_factory(offsets: Tuple[float, ...]) -> Callable:
     def codegen(context, builder, signature, args):
       (index,) = args
       (index_type,) = signature.args
+      float_type = signature.return_type.dtype
       llvm_ret_type = context.get_value_type(signature.return_type)
-      llvm_float64_type = context.get_value_type(signature.return_type.dtype)
+      llvm_float_type = context.get_value_type(float_type)
       pos_tuple = cgutils.get_null_value(llvm_ret_type)
-      sig = types.float64(types.float64, index_type)
+      sig = float_type(float_type, index_type)
 
       for o, offset in enumerate(offsets):
-        ir_offset = ir.Constant(llvm_float64_type, offset)
+        ir_offset = ir.Constant(llvm_float_type, offset)
         value = context.compile_internal(
           builder, lambda o, i: o + float(i), sig, [ir_offset, index]
         )
