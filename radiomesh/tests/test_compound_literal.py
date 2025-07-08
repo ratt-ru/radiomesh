@@ -30,7 +30,6 @@ types.Literal.ctor_map[ImagingParameters] = ImagingParametersLiteral
 
 def test_compound_literal():
   img_params = ImagingParameters(1024.1, 1025.2)
-  executed = False
 
   def f_impl(params):
     pass
@@ -44,11 +43,9 @@ def test_compound_literal():
 
     assert params.literal_value.nx == img_params.nx
     assert params.literal_value.ny == img_params.ny
-    nonlocal executed
-    executed = True
 
     def impl(params):
-      pass
+      return True
 
     return impl
 
@@ -56,5 +53,4 @@ def test_compound_literal():
   def f(value):
     return f_impl(numba.literally(value))
 
-  f(img_params)
-  assert executed
+  assert f(img_params)
