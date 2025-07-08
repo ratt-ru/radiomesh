@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import numba
 from numba import types
 from numba.core.boxing import NativeValue, unbox
@@ -6,10 +8,10 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import overload
 
 
+@dataclass
 class ImagingParameters:
-  def __init__(self, nx, ny):
-    self.nx = nx
-    self.ny = ny
+  nx: float
+  ny: float
 
 
 class ImagingParametersLiteral(types.Literal, types.Dummy):
@@ -28,6 +30,7 @@ types.Literal.ctor_map[ImagingParameters] = ImagingParametersLiteral
 
 def test_compound_literal():
   img_params = ImagingParameters(1024.1, 1025.2)
+  executed = False
 
   def f_impl(params):
     pass
@@ -40,15 +43,18 @@ def test_compound_literal():
       )
 
     assert params.literal_value.nx == img_params.nx
-    assert params.literal_value.nx == img_params.ny
+    assert params.literal_value.ny == img_params.ny
+    nonlocal executed
+    executed = True
 
-    def impl(value):
+    def impl(params):
       pass
 
     return impl
 
   @numba.njit
   def f(value):
-    return numba.literally(value)
+    return f_impl(numba.literally(value))
 
   f(img_params)
+  assert executed
