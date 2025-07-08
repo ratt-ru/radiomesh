@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Refine FloatLiteral implementation (:pr:`17`)
 * Move kernel functionality into ESKernel class (:pr:`16`)
 * Move gridder argument checks into a separate function (:pr:`15`)
 * Align ducc0 and numba wgridder parameters (:pr:`14`)
