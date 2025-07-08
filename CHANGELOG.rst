@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Move kernel functionality into ESKernel class (:pr:`16`)
 * Move gridder argument checks into a separate function (:pr:`15`)
 * Align ducc0 and numba wgridder parameters (:pr:`14`)
 * Return 0 for values where the ES kernel is undefined (:pr:`13`)
