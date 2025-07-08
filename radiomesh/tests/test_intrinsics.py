@@ -35,6 +35,19 @@ def test_apply_weights(data, weight):
   assert apply_weights(data, weight) == expected
 
 
+@pytest.mark.parametrize("data, flags", [[(1.0, 2.0), (0, 1)]])
+def test_apply_flags(data, flags):
+  apply_flags_intrinsic = apply_weight_factory(len(data), flags=True)
+
+  @numba.njit
+  def apply_flags(d, f):
+    return apply_flags_intrinsic(d, f)
+
+  assert apply_flags(data, flags) == tuple(
+    d if f == 0.0 else 0.0 for d, f in zip(data, flags)
+  )
+
+
 def test_load_data():
   shape = (5, 4)
   load_data = load_data_factory(shape[1])
