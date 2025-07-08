@@ -34,11 +34,12 @@ def es_kernel_positions_factory(offsets: Tuple[float, ...]) -> Callable:
       (index,) = args
       (index_type,) = signature.args
       llvm_ret_type = context.get_value_type(signature.return_type)
+      llvm_float64_type = context.get_value_type(signature.return_type.dtype)
       pos_tuple = cgutils.get_null_value(llvm_ret_type)
       sig = types.float64(types.float64, index_type)
 
       for o, offset in enumerate(offsets):
-        ir_offset = ir.Constant(ir.DoubleType(), offset)
+        ir_offset = ir.Constant(llvm_float64_type, offset)
         value = context.compile_internal(
           builder, lambda o, i: o + float(i), sig, [ir_offset, index]
         )
@@ -95,9 +96,8 @@ def es_kernel_factory(kernel_fn: Callable[[float, float], float]) -> Callable:
 
 @dataclasses.dataclass(slots=True)
 class ESKernel:
-  """Dataclass holding parameters defining an ES kernel of the form
-  :code:`math.exp(beta * (math.pow(1.0 - x * x, e0) - 1.0))`
-  """
+  """Defines an ES Kernel of the form
+  :code:`math.exp(beta * (math.pow(1.0 - x * x, e0) - 1.0))`"""
 
   # Desired wgridder accuracy
   epsilon: float = 2e-13
@@ -135,15 +135,15 @@ class ESKernel:
     BETA = self.beta
     E0 = self.e0
     if E0 != 0.5:
-      raise NotImplementedError(f"Polynomial kernels are required for e0 != 0.5 ({E0})")
+      raise NotImplementedError(f"Polynomial kernels are required for e0 ({E0}) != 0.5")
 
-    def kernel(pos: float, grid: float) -> float:
-      x = (pos - grid + 0.5) / HALF_SUPPORT
+    def kernel(index: float, pixel: float) -> float:
+      x = (index - pixel + 0.5) / HALF_SUPPORT
       # kernel is only defined for [-1.0, 1.0]
       if x < -1.0 or x > 1.0:
         return 0.0
 
-      return np.exp(BETA * (np.sqrt(1.0 - x * x) - 1.0))
+      return np.exp(BETA * HALF_SUPPORT * (np.sqrt(1.0 - x * x) - 1.0))
 
     return kernel
 

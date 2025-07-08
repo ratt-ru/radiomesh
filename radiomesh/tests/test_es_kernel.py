@@ -35,4 +35,5 @@ def test_es_kernel_intrinsic():
 
   u = 2.3
   pos, kernel_values = fn(u)
+  assert all(kv > 0 for kv in kernel_values)
   assert kernel_values == tuple(map(kernel.kernel_fn, pos, [u] * len(pos)))
