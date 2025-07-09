@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Remove FloatLiteral type (:pr:`25`)
+* Remove compound literal tests (:pr:`25`)
 * Add a DatumLiteral type (:pr:`24`)
 * Add an intrinsic caching test case (:pr:`22`)
 * Avoid hard-coding types in the kernel positions intrinsic (:pr:`21`)
