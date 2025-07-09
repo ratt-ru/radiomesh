@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Add a DatumLiteral type (:pr:`24`)
 * Add an intrinsic caching test case (:pr:`22`)
 * Avoid hard-coding types in the kernel positions intrinsic (:pr:`21`)
 * Add a compound literal test case (:pr:`19`, :pr:`20`)
