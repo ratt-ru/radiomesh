@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Substitute use of Literals for factory functions in numba overloads and intrinsics
+  to ensure numba cache hits (:pr:`26`)
 * Remove FloatLiteral type (:pr:`25`)
 * Remove compound literal tests (:pr:`25`)
 * Add a DatumLiteral type (:pr:`24`)
