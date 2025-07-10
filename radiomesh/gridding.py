@@ -1,5 +1,5 @@
 from functools import reduce
-from typing import List, Tuple
+from typing import Tuple
 
 import numba
 import numpy as np
@@ -9,21 +9,23 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import overload
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.es_kernel import ESKernel
+from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
 from radiomesh.intrinsics import (
-  accumulate_data_factory,
-  apply_weight_factory,
-  check_args_factory,
-  load_data_factory,
-  pol_to_stokes_factory,
+  accumulate_data,
+  apply_flags,
+  apply_weights,
+  check_args,
+  load_data,
+  pol_to_stokes,
 )
+from radiomesh.literals import Datum
 from radiomesh.utils import wgridder_conventions
 
-JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
+JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
 
 
-def parse_schema(schema: str) -> List[str]:
-  return [s.strip().upper() for s in schema.lstrip("[ ").rstrip("] ").split(",")]
+def parse_schema(schema: str) -> Tuple[str, ...]:
+  return tuple(s.strip().upper() for s in schema.lstrip("[ ").rstrip("] ").split(","))
 
 
 def wgrid_impl(
@@ -40,6 +42,9 @@ def wgrid_impl(
   schema,
 ):
   pass
+
+
+flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
 
 @overload(wgrid_impl, jit_options=JIT_OPTIONS)
@@ -102,11 +107,13 @@ def wgrid_overload(
       f"{schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
-  es_kernel = ESKernel(float(epsilon.literal_value))
+  KERNEL = Datum(ESKernel(float(epsilon.literal_value)))
+  POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
+  STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
+  NSTOKES = len(STOKES_SCHEMA_DATUM.value)
+  NPOL = len(POL_SCHEMA_DATUM.value)
+  NUVW = len(["U", "V", "W"])
 
-  pol_schema = parse_schema(pol_str)
-  stokes_schema = parse_schema(stokes_str)
-  NSTOKES = len(stokes_schema)
   NX = nx.literal_value
   NY = ny.literal_value
   PIXSIZEX = float(pixsizex.literal_value)
@@ -116,19 +123,6 @@ def wgrid_overload(
   U_MAX = 1.0 / PIXSIZEX / 2.0
   V_MAX = 1.0 / PIXSIZEY / 2.0
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
-
-  # Generate intrinsics
-  load_vis_data = load_data_factory(len(pol_schema))
-  load_uvw_data = load_data_factory(len(["U", "V", "W"]))
-  apply_weights = apply_weight_factory(len(pol_schema))
-  apply_flags = apply_weight_factory(len(pol_schema), True)
-  accumulate_data = accumulate_data_factory(len(stokes_schema), 0)
-  pol_to_stokes = pol_to_stokes_factory(pol_schema, stokes_schema)
-  es_kernel_pos = es_kernel.position_intrinsic
-  eval_es_kernel = es_kernel.kernel_intrinsic
-  check_args = check_args_factory(pol_schema)
-
-  flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
   def impl(
     uvw,
@@ -143,7 +137,7 @@ def wgrid_overload(
     epsilon,
     schema,
   ):
-    check_args(uvw, visibilities, weights, flags, frequencies)
+    check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
 
     wavelengths = frequencies / LIGHTSPEED
@@ -156,18 +150,18 @@ def wgrid_overload(
 
     for t in numba.prange(ntime):
       for bl in range(nbl):
-        u, v, w = load_uvw_data(uvw, (t, bl))
+        u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
           # Return early if entire visibility is flagged
-          vis_flag = load_vis_data(flags, (t, bl, ch))
+          vis_flag = load_data(flags, (t, bl, ch), NPOL, -1)
           if reduce(flag_reduce, vis_flag, True):
             continue
 
-          vis = load_vis_data(visibilities, (t, bl, ch))
-          wgt = load_vis_data(weights, (t, bl, ch))
+          vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
+          wgt = load_data(weights, (t, bl, ch), NPOL, -1)
           wgt = apply_flags(wgt, vis_flag)
           vis = apply_weights(vis, wgt)
-          stokes = pol_to_stokes(vis)
+          stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
 
           # Pixel coordinates
           u_pixel = (U_SIGN * u * wavelengths[ch] + U_MAX) / U_CELL
@@ -179,13 +173,13 @@ def wgrid_overload(
 
           # Tuples of indices of length kernel.support
           # centred on {u,v}_index
-          x_indices = es_kernel_pos(u_index)
-          y_indices = es_kernel_pos(v_index)
+          x_indices = es_kernel_positions(KERNEL, u_index)
+          y_indices = es_kernel_positions(KERNEL, v_index)
 
           # Tuples of kernel values of length kernel.support
           # generated from (index - pixel)
-          x_kernel = eval_es_kernel(x_indices, u_pixel)
-          y_kernel = eval_es_kernel(y_indices, v_pixel)
+          x_kernel = eval_es_kernel(KERNEL, x_indices, u_pixel)
+          y_kernel = eval_es_kernel(KERNEL, y_indices, v_pixel)
 
           for xfi, xk in zip(
             numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
@@ -197,7 +191,7 @@ def wgrid_overload(
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(stokes, pol_weight)
-              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi))
+              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
               weight_grid_view[xi, yi] += pol_weight
 
     return vis_grid, weight_grid

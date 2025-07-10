@@ -11,9 +11,10 @@ from radiomesh.utils import image_params
 @pytest.mark.parametrize("fov", [1.0])
 @pytest.mark.parametrize("oversampling", [2.0])
 def test_wgrid(nx, ny, fov, oversampling):
-  """Smoke test"""
+  """Smoke test. Call with NUMBA_DEBUG_CACHE=1 to ensure caching works"""
+  rng = np.random.default_rng(42)
+
   shape = (100, 7 * 6 // 2, 64, 4)  # (ntime, nbl, nchan, npol)
-  rng = np.random.default_rng()
 
   pixsize = fov * np.pi / 180.0 / nx
 

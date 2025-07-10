@@ -7,11 +7,13 @@ from numba.extending import intrinsic
 
 from radiomesh.intrinsics import (
   POL_CONVERSION,
-  accumulate_data_factory,
-  apply_weight_factory,
-  load_data_factory,
-  pol_to_stokes_factory,
+  accumulate_data,
+  apply_flags,
+  apply_weights,
+  load_data,
+  pol_to_stokes,
 )
+from radiomesh.literals import Datum
 
 
 @pytest.mark.parametrize(
@@ -24,40 +26,35 @@ from radiomesh.intrinsics import (
   ],
 )
 def test_apply_weights(data, weight):
-  apply_weight_intrinsic = apply_weight_factory(len(data))
-
   @numba.njit
-  def apply_weights(d, w):
-    return apply_weight_intrinsic(d, w)
+  def weight_data(d, w):
+    return apply_weights(d, w)
 
   if not isinstance(weight, tuple):
     expected = tuple(d * weight for d in data)
   else:
     expected = tuple(d * w for d, w in zip(data, weight))
 
-  assert apply_weights(data, weight) == expected
+  assert weight_data(data, weight) == expected
 
 
 @pytest.mark.parametrize("data, flags", [[(1.0, 2.0), (0, 1)]])
 def test_apply_flags(data, flags):
-  apply_flags_intrinsic = apply_weight_factory(len(data), flags=True)
-
   @numba.njit
-  def apply_flags(d, f):
-    return apply_flags_intrinsic(d, f)
+  def flag_data(d, f):
+    return apply_flags(d, f)
 
-  assert apply_flags(data, flags) == tuple(
+  assert flag_data(data, flags) == tuple(
     d if f == 0.0 else 0.0 for d, f in zip(data, flags)
   )
 
 
 def test_load_data():
   shape = (5, 4)
-  load_data = load_data_factory(shape[1])
 
   @numba.njit
   def load(a, i):
-    return load_data(a, (i,))
+    return load_data(a, (i,), shape[1], -1)
 
   data = np.arange(np.prod(shape)).reshape(shape)
 
@@ -67,11 +64,10 @@ def test_load_data():
 
 def test_accumulate_data():
   shape = (5, 4)
-  accumulate_data = accumulate_data_factory(shape[1])
 
   @numba.njit
   def accumulate(d, a, i):
-    return accumulate_data(d, a, (i,))
+    return accumulate_data(d, a, (i,), shape[1], -1)
 
   data = np.zeros(shape)
 
@@ -85,20 +81,21 @@ def test_accumulate_data():
 @pytest.mark.parametrize(
   "pols,stokes",
   [
-    (["XX", "XY", "YX", "YY"], ["I", "Q", "U", "V"]),
-    (["RR", "RL", "LR", "LL"], ["I", "Q", "U", "V"]),
-    (["XX", "YY"], ["I", "Q"]),
-    (["RR", "LL"], ["I", "V"]),
+    (("XX", "XY", "YX", "YY"), ("I", "Q", "U", "V")),
+    (("RR", "RL", "LR", "LL"), ("I", "Q", "U", "V")),
+    (("XX", "YY"), ("I", "Q")),
+    (("RR", "LL"), ("I", "V")),
   ],
 )
 def test_pol_conversion(pols, stokes):
   """Test that converting from polarisation to stokes works.
   This depends on correctness of the conversion routines in POL_CONVERSION"""
-  convert_intrinsic = pol_to_stokes_factory(pols, stokes)
+  POL_DATUM = Datum(pols)
+  STOKES_DATUM = Datum(stokes)
 
   @numba.njit
   def convert(t):
-    return convert_intrinsic(t)
+    return pol_to_stokes(t, POL_DATUM, STOKES_DATUM)
 
   mapping = []
 
@@ -123,12 +120,18 @@ def add_intrinsic(typingctx, array, value):
   if not isinstance(value, types.IntegerLiteral):
     raise RequireLiteralValue(f"{value}")
 
-  av = float(value.literal_value)
+  if not isinstance(array, types.Array):
+    raise TypeError(f"{array}")
+
+  av = float(value.literal_value) + 0.1
+  sig = array.copy(dtype=typingctx.unify_types(array.dtype, types.float64))(
+    array, value
+  )
 
   def codegen(context, builder, sig, args):
     return context.compile_internal(builder, lambda a, v: a + av, sig, args)
 
-  return array(array, value), codegen
+  return sig, codegen
 
 
 @numba.njit(cache=True, nogil=True)
@@ -149,4 +152,7 @@ def test_intrinsic_caching():
   def h(a, v):
     return add_intrinsic(a, numba.literally(v))
 
-  np.testing.assert_array_equal(g(np.ones(10), 1) + 1, h(np.ones(10), 2))
+  assert g(np.ones(1), 1).item() == 2.1
+
+  np.testing.assert_array_almost_equal(g(np.ones(10), 1) + 1, h(np.ones(10), 2))
+  np.testing.assert_array_almost_equal(h(np.ones(10), 5) - 3, h(np.ones(10), 2))
