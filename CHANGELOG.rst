@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Datum typing updates (:pr:`28`)
 * Apply ``prefer_literal=True`` to overloads and intrinsics (:pr:`27`)
 * Substitute use of Literals for factory functions in numba overloads and intrinsics
   to ensure numba cache hits (:pr:`26`)
