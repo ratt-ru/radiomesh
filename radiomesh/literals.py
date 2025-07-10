@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Hashable, Tuple
 
 from numba.core import types
 from numba.core.datamodel.models import OpaqueModel, register_default
@@ -12,14 +12,18 @@ from numba.extending import (
 
 
 class Datum:
-  """A simple class holding a value of any type"""
+  """A simple class holding an immutable value of any hashable type"""
 
-  __slots__ = ("value",)
+  __slots__ = ("value", "hashvalue")
 
-  value: Any
+  value: Hashable
 
-  def __init__(self, value: Any):
+  def __init__(self, value: Hashable):
     self.value = value
+    try:
+      self.hashvalue = hash(value)
+    except (ValueError, TypeError) as e:
+      raise ValueError(f"{value} must be hashable") from e
 
   def __eq__(self, other) -> bool:
     if isinstance(other, Datum):
@@ -27,7 +31,7 @@ class Datum:
     return NotImplemented
 
   def __hash__(self) -> int:
-    return hash(self.value)
+    return self.hashvalue
 
   def __reduce__(self) -> Tuple[Callable[[Datum], Any], Any]:
     return (Datum, (self.value,))
@@ -44,12 +48,28 @@ class DatumLiteral(types.Literal, types.Dummy):
 
   def __init__(self, value: Datum):
     if not isinstance(value, Datum):
-      raise TypeError(f"{value} of type {type(value)} should be a Datum")
+      raise TypeError(f"{value} of type {type(value)} must be a Datum")
 
+    name = f"DatumLiteral[{type(value.value).__name__}]({value})"
+    super(types.Dummy, self).__init__(name=name)
     self._literal_init(value)
-    super(types.Dummy, self).__init__(
-      name=f"DatumLiteral[{type(value.value).__name__}]({value})"
-    )
+
+  def __reduce__(self):
+    return (DatumLiteral, (self.literal_value,))
+
+  def __eq__(self, other):
+    if not isinstance(other, DatumLiteral):
+      return NotImplemented
+
+    return self.literal_value == other.literal_value
+
+  def __hash__(self):
+    return hash(self.literal_value)
+
+  @property
+  def datum_value(self) -> Any:
+    """Returns the value wrapped in the underlying Datum object"""
+    return self.literal_value.value
 
 
 @unbox(DatumLiteral)
