@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Hashable, Tuple
+from typing import Any, Callable, Generic, Hashable, Tuple, TypeVar
 
 from numba.core import types
 from numba.core.datamodel.models import OpaqueModel, register_default
@@ -10,15 +10,17 @@ from numba.extending import (
   unbox,
 )
 
+H = TypeVar("H", bound=Hashable)
 
-class Datum:
+
+class Datum(Generic[H]):
   """A simple class holding an immutable value of any hashable type"""
 
   __slots__ = ("value", "hashvalue")
 
-  value: Hashable
+  value: H
 
-  def __init__(self, value: Hashable):
+  def __init__(self, value: H):
     self.value = value
     try:
       self.hashvalue = hash(value)
@@ -43,10 +45,10 @@ class Datum:
     return repr(self.value)
 
 
-class DatumLiteral(types.Literal, types.Dummy):
+class DatumLiteral(Generic[H], types.Literal, types.Dummy):
   """Numba literal type holding an arbitrary Datum object"""
 
-  def __init__(self, value: Datum):
+  def __init__(self, value: Datum[H]):
     if not isinstance(value, Datum):
       raise TypeError(f"{value} of type {type(value)} must be a Datum")
 
@@ -67,7 +69,7 @@ class DatumLiteral(types.Literal, types.Dummy):
     return hash(self.literal_value)
 
   @property
-  def datum_value(self) -> Any:
+  def datum_value(self) -> H:
     """Returns the value wrapped in the underlying Datum object"""
     return self.literal_value.value
 
