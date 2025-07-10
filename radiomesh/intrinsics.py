@@ -44,7 +44,7 @@ POL_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
 }
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def load_data(
   typingctx,
   array: types.Array,
@@ -103,7 +103,7 @@ def load_data(
   return sig, codegen
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def apply_weights(
   typingctx, data: types.UniTuple, weight: types.UniTuple | types.Float
 ) -> Tuple[Signature, Callable]:
@@ -152,7 +152,7 @@ def apply_weights(
   return sig, codegen
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def apply_flags(
   typingctx, data: types.UniTuple, flags: types.UniTuple
 ) -> Tuple[Signature, Callable]:
@@ -186,7 +186,7 @@ def apply_flags(
   return sig, codegen
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def accumulate_data(
   typingctx,
   data: types.UniTuple,
@@ -252,7 +252,7 @@ def accumulate_data(
   return sig, codegen
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def pol_to_stokes(
   typingctx, data: types.UniTuple, pol_schema: DatumLiteral, stokes_schema: DatumLiteral
 ) -> Tuple[Signature, Callable]:

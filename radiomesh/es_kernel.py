@@ -13,7 +13,7 @@ from numba.extending import intrinsic
 from radiomesh.literals import DatumLiteral
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def es_kernel_positions(
   typingctx, kernel: DatumLiteral, index: types.Integer
 ) -> Tuple[Signature, Callable]:
@@ -58,7 +58,7 @@ def es_kernel_positions(
   return sig, codegen
 
 
-@intrinsic
+@intrinsic(prefer_literal=True)
 def eval_es_kernel(
   typingctx, kernel: DatumLiteral, pos: types.UniTuple, grid: types.Float
 ) -> Tuple[Signature, Callable]:
