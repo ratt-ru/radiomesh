@@ -47,7 +47,7 @@ def wgrid_impl(
 flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
 
 
-@overload(wgrid_impl, jit_options=JIT_OPTIONS)
+@overload(wgrid_impl, jit_options=JIT_OPTIONS, prefer_literal=True)
 def wgrid_overload(
   uvw,
   visibilities,
