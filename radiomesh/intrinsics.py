@@ -216,7 +216,7 @@ def accumulate_data(
 
   if not isinstance(data, types.UniTuple) or len(data) != ndata.literal_value:
     raise TypingError(
-      f"'pol_tuple' ({data}) should be a length {ndata.literal_value} tuple"
+      f"'data' ({data}) should be a tuple of length {ndata.literal_value}"
     )
 
   if not isinstance(array, types.Array) or array.ndim != len(index) + 1:
@@ -266,7 +266,7 @@ def pol_to_stokes(
 
   if not isinstance(data, types.UniTuple) or len(data) != len(pol_schema.datum_value):
     raise TypingError(
-      f"data ({data}) should be a length " f"{len(pol_schema.datum_value)} tuple"
+      f"data ({data}) should be a tuple of length {len(pol_schema.datum_value)}"
     )
 
   pol_schema_map = {c: i for i, c in enumerate(pol_schema.datum_value)}
