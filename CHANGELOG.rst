@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Fix ``pol_to_stokes`` exception message (:pr:`29`)
 * Datum typing updates (:pr:`28`)
 * Apply ``prefer_literal=True`` to overloads and intrinsics (:pr:`27`)
 * Substitute use of Literals for factory functions in numba overloads and intrinsics
