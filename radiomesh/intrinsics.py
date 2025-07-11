@@ -262,7 +262,9 @@ def pol_to_stokes(
     raise RequireLiteralValue(f"'pol_schema' ({pol_schema}) must be a DatumLiteral")
 
   if not isinstance(stokes_schema, DatumLiteral):
-    raise RequireLiteralValue(f"'pol_schema' ({pol_schema}) must be a DatumLiteral")
+    raise RequireLiteralValue(
+      f"'stokes_schema' ({stokes_schema}) must be a DatumLiteral"
+    )
 
   if not isinstance(data, types.UniTuple) or len(data) != len(pol_schema.datum_value):
     raise TypingError(
