@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Parametrise eval_es_kernel kernel parameter (``DatumLiteral[ESKernel]``) (:pr:`30`)
 * Fix ``pol_to_stokes`` exception message (:pr:`29`)
 * Datum typing updates (:pr:`28`)
 * Apply ``prefer_literal=True`` to overloads and intrinsics (:pr:`27`)
