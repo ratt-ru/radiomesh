@@ -8,6 +8,9 @@ import sympy as sm
 from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
 from ducc0.fft import good_size
+from numpy.fft import fft2, ifft2
+Fs = partial(np.fft.fftshift, axes=(-2, -1))
+iFs = partial(np.fft.ifftshift, axes=(-2, -1))
 
 
 JIT_OPTIONS = {
@@ -57,6 +60,7 @@ def _es_kernel(x, kern, betak, alphak):
     oneminxsq = (1 - x) * (1 + x)
     mx = oneminxsq <= 1
     kern[mx] = np.exp(betak*(pow(oneminxsq[mx], alphak) - 1))
+    kern[~mx] = 0.0
     return kern
 
 
@@ -111,21 +115,18 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
     slcy = slice(padyl, padyr)
 
     def _impl(data, weight, flag, uvw, freq, jones, tbin_idx, tbin_counts,
-              ant1, ant2, nx, ny, cell_size_x, cell_size_y,
-              pol, product, nc,
+              ant1, ant2, ngx, ngy, cell_size_x, cell_size_y,
               supp, beta, alpha):
         # for dask arrays we need to adjust the chunks to
         # start counting from zero
         tbin_idx -= tbin_idx.min()
         nt = np.shape(tbin_idx)[0]
         nrow, nchan, ncorr = data.shape
-        vis_grid = np.zeros((nx, ny, ns), dtype=data.dtype)
-        wgt_grid = np.zeros((nx, ny, ns), dtype=data.real.dtype)
+        vis_grid = np.zeros((ns, ngx, ngy), dtype=data.dtype)
+        # wgt_grid = np.zeros((ns, ngx, ngy), dtype=data.real.dtype)
 
         # ufreq
         u_cell = 1/(nx*cell_size_x)
-        # shifts fftfreq such that they start at zero
-        # convenient to look up the pixel value
         umax = 1/cell_size_x/2
 
         # vfreq
@@ -172,23 +173,28 @@ def nb_grid_data_impl(data, weight, flag, jones, tbin_idx, tbin_counts,
                     # do we ever need to check these bounds?
                     x_idx = pos + u_idx
                     x = (x_idx - ug)/ko2
-                    _es_kernel(x, xkern, betak)
+                    _es_kernel(x, xkern, betak, alpha)
                     y_idx = pos + v_idx
                     y = (y_idx - vg)/ko2
-                    _es_kernel(y, ykern, betak)
+                    _es_kernel(y, ykern, betak, alpha)
 
                     for c in range(ncorr):
                         wc = wgt[c]
                         for i, xi in zip(x_idx, xkern):
                             for j, yj in zip(y_idx, ykern):
                                 xyw = xi*yj*wc
-                                wgt_grid[c, i, j] += xyw
+                                # wgt_grid[c, i, j] += xyw
                                 vis_grid[c, i, j] += xyw * vis[c]
+        
+        # now the FFTs
+        # the *ngx*ngy corrects for the FFT normalisation
+        dirty = Fs(ifft2(iFs(vis_grid))*ngx*ngy)[:, slcx, slcy]
+        dirty /= (xcorrector[slcx, None] * ycorrector[None, slcy])
 
-        return (vis_grid, wgt_grid)
+        return dirty
     
-    _impl.returns = types.Tuple([types.Array(types.complex128, 3, 'C'),
-                                 types.Array(types.float64, 3, 'C')])
+    # _impl.returns = types.Tuple([types.Array(types.complex128, 3, 'C'),
+    #                              types.Array(types.float64, 3, 'C')])
     return _impl
 
 def stokes_funcs(data, jones, product, pol, nc):
