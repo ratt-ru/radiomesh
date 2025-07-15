@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Remove 0.5 offset from the ES kernel evaluation (:pr:`31`)
 * Parametrise eval_es_kernel kernel parameter (``DatumLiteral[ESKernel]``) (:pr:`30`)
 * Fix ``pol_to_stokes`` exception message (:pr:`29`)
 * Datum typing updates (:pr:`28`)
