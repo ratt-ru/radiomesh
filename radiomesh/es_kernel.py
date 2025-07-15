@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 import math
 from typing import Callable, Tuple
@@ -60,7 +62,7 @@ def es_kernel_positions(
 
 @intrinsic(prefer_literal=True)
 def eval_es_kernel(
-  typingctx, kernel: DatumLiteral, pos: types.UniTuple, grid: types.Float
+  typingctx, kernel: DatumLiteral[ESKernel], pos: types.UniTuple, grid: types.Float
 ) -> Tuple[Signature, Callable]:
   """Evaluates the es kernel at :code:`(pos - grid + 0.5) / half_support`
 
