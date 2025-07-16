@@ -18,6 +18,9 @@ dependencies = [
 [project.optional-dependencies]
 testing = [
     "pytest>=8.4.1",
+    "xarray-ms",
+    "requests",
+    "ducc0",
 ]
 dev = [
     "pre-commit>=4.2.0",

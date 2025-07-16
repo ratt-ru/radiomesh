@@ -1,6 +1,7 @@
 from functools import partial
 
 import numpy as np
+import numpy.typing as npt
 from ducc0.fft import good_size
 from numba import literally, njit
 from numba.extending import overload
@@ -49,56 +50,56 @@ def _es_kernel(x, kern, betak, alphak):
 
 @njit(**JIT_OPTIONS)
 def grid_data(
-  data,
-  weight,
-  flag,
-  jones,
-  tbin_idx,
-  tbin_counts,
-  ant1,
-  ant2,
-  nx,
-  ny,
-  nx_psf,
-  ny_psf,
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  nx: int,
+  ny: int,
+  cellx: float,
+  celly: float,
   pol,
   product,
   nc,
 ):
-  vis, wgt = _grid_data_impl(
+  dirty = _grid_data_impl(
+    uvw,
+    freq,
     data,
     weight,
     flag,
     jones,
-    tbin_idx,
-    tbin_counts,
     ant1,
     ant2,
     nx,
     ny,
-    nx_psf,
-    ny_psf,
+    cellx,
+    celly,
     literally(pol),
     literally(product),
     literally(nc),
   )
 
-  return vis, wgt
+  return dirty
 
 
 def _grid_data_impl(
-  data,
-  weight,
-  flag,
-  jones,
-  tbin_idx,
-  tbin_counts,
-  ant1,
-  ant2,
-  nx,
-  ny,
-  nx_psf,
-  ny_psf,
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  nx: int,
+  ny: int,
+  cellx: float,
+  celly: float,
   pol,
   product,
   nc,
@@ -110,16 +111,18 @@ def _grid_data_impl(
   _grid_data_impl, prefer_literal=True, jit_options={**JIT_OPTIONS, "parallel": True}
 )
 def nb_grid_data_impl(
-  data,
-  weight,
-  flag,
-  jones,
-  tbin_idx,
-  tbin_counts,
-  ant1,
-  ant2,
-  nx,
-  ny,
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  nx: int,
+  ny: int,
+  cellx: float,
+  celly: float,
   pol,
   product,
   nc,
@@ -128,11 +131,9 @@ def nb_grid_data_impl(
   beta=2.3,
   alpha=0.5,
 ):
-  vis_func, wgt_func = stokes_funcs(data, jones, product, pol, nc)
+  vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
   ns = len(product.literal_value)
-  flip_u, flip_v, flip_w, _, _ = wgridder_conventions(0.0, 0.0)
-  usign = -1.0 if flip_u else 1.0
-  vsign = -1.0 if flip_v else 1.0
+  usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   ngx = good_size(int(padding * nx))
   # make sure it is even and a good size for the FFT
@@ -152,39 +153,32 @@ def nb_grid_data_impl(
   slcy = slice(padyl, padyr)
 
   def _impl(
-    data,
-    weight,
-    flag,
-    uvw,
-    freq,
-    jones,
-    tbin_idx,
-    tbin_counts,
-    ant1,
-    ant2,
-    ngx,
-    ngy,
-    cell_size_x,
-    cell_size_y,
+    uvw: npt.NDArray,
+    freq: npt.NDArray,
+    data: npt.NDArray,
+    weight: npt.NDArray,
+    flag: npt.NDArray,
+    jones: npt.NDArray,
+    ant1: npt.NDArray,
+    ant2: npt.NDArray,
+    nx: int,
+    ny: int,
+    cellx: float,
+    celly: float,
     supp,
     beta,
     alpha,
   ):
-    # for dask arrays we need to adjust the chunks to
-    # start counting from zero
-    tbin_idx -= tbin_idx.min()
-    nt = np.shape(tbin_idx)[0]
-    nrow, nchan, ncorr = data.shape
+    ntime, nbl, nchan, ncorr = data.shape
     vis_grid = np.zeros((ns, ngx, ngy), dtype=data.dtype)
-    # wgt_grid = np.zeros((ns, ngx, ngy), dtype=data.real.dtype)
 
     # ufreq
-    u_cell = 1 / (nx * cell_size_x)
-    umax = 1 / cell_size_x / 2
+    u_cell = 1 / (nx * cellx)
+    umax = 1 / cellx / 2
 
     # vfreq
-    v_cell = 1 / (ny * cell_size_y)
-    vmax = 1 / cell_size_y / 2
+    v_cell = 1 / (ny * celly)
+    vmax = 1 / celly / 2
 
     normfreq = freq / LIGHTSPEED
     ko2 = supp / 2
@@ -192,17 +186,17 @@ def nb_grid_data_impl(
     pos = np.arange(supp) - ko2
     xkern = np.zeros(supp)
     ykern = np.zeros(supp)
-    for t in range(nt):
-      for row in range(tbin_idx[t], tbin_idx[t] + tbin_counts[t]):
-        p = int(ant1[row])
-        q = int(ant2[row])
+    for t in range(ntime):
+      for bl in range(nbl):
+        p = int(ant1[bl])
+        q = int(ant2[bl])
         gp = jones[t, p, :, 0]
         gq = jones[t, q, :, 0]
-        uvw_row = uvw[row]
-        wgt_row = weight[row]
-        vis_row = data[row]
+        uvw_row = uvw[t, bl]
+        wgt_row = weight[t, bl]
+        vis_row = data[t, bl]
         for chan in range(nchan):
-          if flag[row, chan]:
+          if flag[t, bl, chan]:
             continue
           wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
           vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
@@ -238,7 +232,8 @@ def nb_grid_data_impl(
     # now the FFTs
     # the *ngx*ngy corrects for the FFT normalisation
     dirty = Fs(ifft2(iFs(vis_grid)) * ngx * ngy)[:, slcx, slcy]
-    dirty /= xcorrector[slcx, None] * ycorrector[None, slcy]
+    # apply taper
+    dirty /= xcorrector[None, slcx, None] * ycorrector[None, None, slcy]
 
     return dirty
 
