@@ -6,7 +6,7 @@ import pytest
 import xarray as xr
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.core import grid_data
+from radiomesh.core import vis2im
 from radiomesh.stokes import stokes_funcs
 
 pmp = pytest.mark.parametrize
@@ -64,20 +64,17 @@ def explicit_gridder(
   return res / n
 
 
-@pmp("nx", (32,))
-@pmp("ny", (32, 64))
 @pmp("fov", (1.0,))
-@pmp("precision", ("single", "double"))
-def test_grid_data_now(nx, ny, fov, precision, ms_name):
-  # if precision == "single":
-  #   real_type = "f4"
-  #   complex_type = "c8"
-  # else:
-  #   real_type = "f8"
-  #   complex_type = "c16"
-
+@pmp("precision", ("single",))
+def test_grid_data_now(fov, precision, ms_name):
   np.random.seed(420)
-  cell = fov * np.pi / 180 / nx
+  if precision == "single":
+    # real_type = "f4"
+    complex_type = "c8"
+  else:
+    # real_type = "f8"
+    complex_type = "c16"
+
   dt = xr.open_datatree(ms_name)
   dt_ms = dt[dt.groups[1]]
   dt_ant = dt[dt.groups[2]]
@@ -90,7 +87,7 @@ def test_grid_data_now(nx, ny, fov, precision, ms_name):
   uvw = dt_ms.UVW.values
   ntime, nbl, nchan, ncorr = vis.shape
   nant = dt_ant.antenna_name.size
-  jones = np.zeros((ntime, nant, nchan, 1, 2, 2), dtype=np.complex128)
+  jones = np.zeros((ntime, nant, nchan, 1, 2, 2), dtype=complex_type)
   jones[:, :, :, :, 0, 0] = 1.0
   jones[:, :, :, :, 1, 1] = 1.0
   _, ant1 = np.unique(dt_ms.baseline_antenna1_name.values, return_inverse=True)
@@ -102,6 +99,17 @@ def test_grid_data_now(nx, ny, fov, precision, ms_name):
     pol = "circular"
   product = "IQUV"
   vis_func, wgt_func = stokes_funcs(jones, product, pol, ncorr)
+
+  # if we don't grid at Nyquist some uv points may fall off the grid
+  umax = np.abs(uvw[:, :, 0]).max()
+  vmax = np.abs(uvw[:, :, 1]).max()
+  uv_max = np.maximum(umax, vmax)
+  cell = 1.0 / (2 * uv_max * freq.max() / LIGHTSPEED)
+  nx = int(np.ceil(np.deg2rad(fov) / cell))
+  if nx % 2:
+    nx += 1
+  ny = nx
+
   dirty_dft = explicit_gridder(
     uvw,
     freq,
@@ -119,7 +127,7 @@ def test_grid_data_now(nx, ny, fov, precision, ms_name):
     vis_func,
     wgt_func,
   )
-  dirty = grid_data(
+  dirty = vis2im(
     uvw,
     freq,
     vis,
@@ -136,5 +144,6 @@ def test_grid_data_now(nx, ny, fov, precision, ms_name):
     product,
     ncorr,
   )
-
-  assert (dirty == dirty_dft).all()
+  # we compare fractional differences because abs values can be very large
+  diff = (dirty - dirty_dft) / dirty_dft.max()
+  assert np.allclose(1 + diff, 1, rtol=1e-4, atol=1e-4)

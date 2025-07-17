@@ -1,17 +1,10 @@
 import sympy as sm
 from numba import njit
-from numba.core import types
 from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
 
 
 def stokes_funcs(jones, product, pol, nc):
-  if isinstance(product, types.StringLiteral):
-    product = product.literal_value
-  if isinstance(pol, types.StringLiteral):
-    pol = pol.literal_value
-  if isinstance(pol, types.IntegerLiteral):
-    nc = nc.literal_value
   # set up symbolic expressions
   gp00, gp10, gp01, gp11 = sm.symbols("gp00 gp10 gp01 gp11", real=False)
   gq00, gq10, gq01, gq11 = sm.symbols("gq00 gq10 gq01 gq11", real=False)
@@ -45,6 +38,9 @@ def stokes_funcs(jones, product, pol, nc):
     T = sm.Matrix(
       [[1.0, 0, 0, 1.0], [0, 1.0, 1.0j, 0], [0, 1.0, -1.0j, 0], [1.0, 0, 0, -1.0]]
     )
+  else:
+    print("pol = ", pol)
+
   Tinv = T.inv()
 
   # Full Stokes weights
