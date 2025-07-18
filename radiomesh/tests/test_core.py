@@ -4,6 +4,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import xarray as xr
+import xarray_ms  # noqa: F401
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.core import vis2im
