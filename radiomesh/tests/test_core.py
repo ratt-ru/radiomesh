@@ -4,7 +4,6 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import xarray as xr
-import xarray_ms  # noqa: F401
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.core import vis2im
@@ -76,7 +75,7 @@ def test_grid_data_now(fov, precision, ms_name):
     # real_type = "f8"
     complex_type = "c16"
 
-  dt = xr.open_datatree(ms_name)
+  dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
   dt_ms = dt[dt.groups[1]]
   dt_ant = dt[dt.groups[2]]
   vis = dt_ms.VISIBILITY.values
