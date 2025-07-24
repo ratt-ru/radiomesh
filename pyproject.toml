@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 testing = [
+    "appdirs",
     "pytest>=8.4.1",
     "xarray-ms",
     "requests",
