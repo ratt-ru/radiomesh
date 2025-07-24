@@ -4,14 +4,10 @@ from typing import Callable
 import numpy as np
 import numpy.typing as npt
 from ducc0.fft import good_size
-from numba import literally, njit
-from numba.core import types
-from numba.core.errors import RequireLiteralValue
-from numba.extending import overload
+from numba import njit
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.stokes import stokes_funcs
-from radiomesh.utils import wgridder_conventions
 
 Fs = partial(np.fft.fftshift, axes=(-2, -1))
 iFs = partial(np.fft.ifftshift, axes=(-2, -1))
@@ -19,43 +15,28 @@ iFs = partial(np.fft.ifftshift, axes=(-2, -1))
 JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": False}
 
 
-# hardcode 2D gridding params
-# alpha (support), sigma (padding), epsilon, beta, mu
-# 8, 1.40, 3.1679034e-05, 1.83155364990234371, 0.516968027750650871  (single precision)
-# 8, 1.40, 8.5117152e-06, 1.82943505181206612, 0.517185719807942368  (double precision)
-
-
-# TODO - the grid correctors could be further optimized
-# see discussion below eq 3.10 in https://arxiv.org/pdf/1808.06736
-def grid_corrector2D(dom, alpha, beta, mu, nroots=32):
+def grid_corrector(dom, alpha, beta, mu):
+  """
+  Use Gauss-Legendre quadrature to compute the grid corrector (taper).
+  """
   # even number of roots required to exploit even symmetry of integrand
+  nroots = 2 * alpha
   if nroots % 2:
     nroots += 1
   q, wgt = np.polynomial.legendre.leggauss(nroots)
   idx = q > 0
   q = q[idx]
   wgt = wgt[idx]
-  z = np.einsum("ij,k->ijk", dom, q)
-  xkern = es_kernel(q * alpha / 2, beta, mu, alpha)
-  tmp = np.sum(
-    np.cos(-np.pi * alpha * z) * xkern[None, None, :] * wgt[None, None, :], axis=-1
-  )
-  return alpha * tmp
-
-
-def grid_corrector(dom, alpha, beta, mu, nroots=32):
-  # even number of roots required to exploit even symmetry of integrand
-  if nroots % 2:
-    nroots += 1
-  q, wgt = np.polynomial.legendre.leggauss(nroots)
-  idx = q > 0
-  q = q[idx]
-  wgt = wgt[idx]
-  z = np.outer(dom, q)
+  shape = np.shape(dom)
   xkern = np.zeros(q.size)
   _es_kernel(q, xkern, alpha * beta, mu)
-  tmp = np.sum(np.cos(-np.pi * alpha * z) * xkern[None, :] * wgt[None, :], axis=-1)
-  return alpha * tmp
+  if len(shape) > 1:
+    z = np.einsum("ij,k->ijk", dom, q)
+  else:
+    z = np.outer(dom, q)
+  # note the ndim dependent broadcast
+  tmp = alpha * np.sum(np.cos(np.pi * alpha * z) * xkern * wgt, axis=-1)
+  return np.reshape(tmp, shape)
 
 
 @njit(**JIT_OPTIONS, inline="always")
@@ -76,7 +57,7 @@ def _es_kernel(x, kern, betak, mu):
 @njit(**JIT_OPTIONS)
 def es_kernel(x, beta, mu, alpha):
   """
-  Unscaled version of the gridding
+  Unscaled version of the kernel
 
   exp(alpha * beta * (power(1 - (2*x/alpha) ** 2, mu) - 1))
 
@@ -104,195 +85,6 @@ def grid_data(
   pol: str,
   product: str,
   nc: int,
-):
-  grid = _grid_data_impl(
-    uvw,
-    freq,
-    data,
-    weight,
-    flag,
-    jones,
-    ant1,
-    ant2,
-    ngx,
-    ngy,
-    cellx,
-    celly,
-    literally(pol),
-    literally(product),
-    literally(nc),
-  )
-
-  return grid
-
-
-def _grid_data_impl(
-  uvw: npt.NDArray,
-  freq: npt.NDArray,
-  data: npt.NDArray,
-  weight: npt.NDArray,
-  flag: npt.NDArray,
-  jones: npt.NDArray,
-  ant1: npt.NDArray,
-  ant2: npt.NDArray,
-  ngx: int,
-  ngy: int,
-  cellx: float,
-  celly: float,
-  pol: str,
-  product: str,
-  nc: int,
-  sigma=2.0,
-  alpha=8,
-  beta=2.3,
-  mu=0.5,
-):
-  raise NotImplementedError
-
-
-@overload(
-  _grid_data_impl, prefer_literal=True, jit_options={**JIT_OPTIONS, "parallel": True}
-)
-def nb_grid_data_impl(
-  uvw,
-  freq,
-  data,
-  weight,
-  flag,
-  jones,
-  ant1,
-  ant2,
-  ngx,
-  ngy,
-  cellx,
-  celly,
-  pol,
-  product,
-  nc,
-  sigma=2.0,
-  alpha=8,
-  beta=2.3,
-  mu=0.5,
-):
-  if not isinstance(pol, types.StringLiteral):
-    raise RequireLiteralValue(f"'pol' {pol} is not a str literal")
-  if not isinstance(product, types.StringLiteral):
-    raise RequireLiteralValue(f"'product' {product} is not a str literal")
-  if not isinstance(nc, types.IntegerLiteral):
-    raise RequireLiteralValue(f"'nc' {nc} is not a int literal")
-  vis_func, wgt_func = stokes_funcs(
-    jones, product.literal_value, pol.literal_value, nc.literal_value
-  )
-  ns = len(product.literal_value)
-  usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
-
-  def _impl(
-    uvw,
-    freq,
-    data,
-    weight,
-    flag,
-    jones,
-    ant1,
-    ant2,
-    ngx,
-    ngy,
-    cellx,
-    celly,
-    pol,
-    product,
-    nc,
-    sigma=2.0,
-    alpha=8,
-    beta=2.3,
-    mu=0.5,
-  ):
-    ntime, nbl, nchan, ncorr = data.shape
-    vis_grid = np.zeros((ns, ngx, ngy), dtype=data.dtype)
-
-    # ufreq
-    u_cell = 1 / (ngx * cellx)
-    umax = 1 / cellx / 2
-
-    # vfreq
-    v_cell = 1 / (ngy * celly)
-    vmax = 1 / celly / 2
-
-    normfreq = freq / LIGHTSPEED
-    half_supp = alpha / 2
-    betak = beta * alpha
-    pos = (np.arange(alpha) - half_supp).astype(np.int64)
-    xkern = np.zeros(alpha)
-    ykern = np.zeros(alpha)
-    for t in range(ntime):
-      for bl in range(nbl):
-        p = int(ant1[bl])
-        q = int(ant2[bl])
-        gp = jones[t, p, :, 0]
-        gq = jones[t, q, :, 0]
-        uvw_row = uvw[t, bl]
-        wgt_row = weight[t, bl]
-        vis_row = data[t, bl]
-        for chan in range(nchan):
-          if flag[t, bl, chan].any():
-            continue
-          wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
-          vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
-
-          # current uv coords
-          chan_normfreq = normfreq[chan]
-          u_tmp = uvw_row[0] * chan_normfreq * usign
-          v_tmp = uvw_row[1] * chan_normfreq * vsign
-          # pixel coordinates
-          ug = (u_tmp + umax) / u_cell
-          vg = (v_tmp + vmax) / v_cell
-          # indices
-          u_idx = int(np.round(ug))
-          v_idx = int(np.round(vg))
-
-          # the grid position is pos + u_idx on the un-fftshifted grid
-          x_idx = pos + u_idx
-          x = (x_idx - ug) / half_supp
-          # this finds the index on the fftshifted grid
-          # x_idx = (x_idx + ngx//2) % ngx
-          _es_kernel(x, xkern, betak, mu)
-          y_idx = pos + v_idx
-          y = (y_idx - vg) / half_supp
-          # y_idx = (y_idx + ngy//2) % ngy
-          _es_kernel(y, ykern, betak, mu)
-
-          for c in range(ncorr):
-            wc = wgt[c]
-            for i, xi in zip(x_idx, xkern):
-              for j, yj in zip(y_idx, ykern):
-                xyw = xi * yj * wc
-                # wgt_grid[c, i, j] += xyw
-                vis_grid[c, i, j] += xyw * vis[c]
-
-    return vis_grid
-
-  # _impl.returns = types.Tuple([types.Array(types.complex128, 3, 'C'),
-  #                              types.Array(types.float64, 3, 'C')])
-  return _impl
-
-
-@njit(**JIT_OPTIONS)
-def grid_data_np(
-  uvw: npt.NDArray,
-  freq: npt.NDArray,
-  data: npt.NDArray,
-  weight: npt.NDArray,
-  flag: npt.NDArray,
-  jones: npt.NDArray,
-  ant1: npt.NDArray,
-  ant2: npt.NDArray,
-  ngx: int,
-  ngy: int,
-  cellx: float,
-  celly: float,
-  pol: str,
-  product: str,
-  nc: int,
   vis_func: Callable,
   wgt_func: Callable,
   sigma=2.0,
@@ -303,21 +95,11 @@ def grid_data_np(
   vsign=-1,
 ):
   ntime, nbl, nchan, ncorr = data.shape
-  # we only need half the
   vis_grid = np.zeros((nc, ngx, ngy), dtype=data.dtype)
-
-  # ufreq
-  u_cell = 1 / (ngx * cellx)
-  umax = 1 / cellx / 2
-
-  # vfreq
-  v_cell = 1 / (ngy * celly)
-  vmax = 1 / celly / 2
-
   normfreq = freq / LIGHTSPEED
   half_supp = alpha / 2
   betak = beta * alpha
-  pos = (np.arange(alpha) - half_supp).astype(np.int64)
+  pos = np.arange(alpha)
   xkern = np.zeros(alpha)
   ykern = np.zeros(alpha)
   for t in range(ntime):
@@ -337,24 +119,25 @@ def grid_data_np(
 
         # current uv coords
         chan_normfreq = normfreq[chan]
-        u_tmp = uvw_row[0] * chan_normfreq * usign
-        v_tmp = uvw_row[1] * chan_normfreq * vsign
-        # pixel coordinates
-        ug = (u_tmp + umax) / u_cell
-        vg = (v_tmp + vmax) / v_cell
-        # indices
-        u_idx = int(np.round(ug))
-        v_idx = int(np.round(vg))
+        u_tmp = uvw_row[0] * chan_normfreq * usign * cellx
+        v_tmp = uvw_row[1] * chan_normfreq * vsign * celly
 
-        # the grid position is pos + u_idx on the un-fftshifted grid
-        x_idx = pos + u_idx
-        x = (x_idx - ug) / half_supp
-        # this finds the index on the fftshifted grid
-        # x_idx = (x_idx + ngx//2) % ngx
+        # uv coordinates on the FFT shifted grid
+        ug = (ngx * u_tmp) % ngx
+        vg = (ngy * v_tmp) % ngy
+
+        # start indices
+        xle = int(np.round(ug)) - alpha // 2
+        yle = int(np.round(vg)) - alpha // 2
+
+        # the grid indices on fftshifted grid
+        x_idx = (xle + pos) % ngx
+        # kernel coordinates
+        x = (pos - ug + xle) / half_supp
         _es_kernel(x, xkern, betak, mu)
-        y_idx = pos + v_idx
-        y = (y_idx - vg) / half_supp
-        # y_idx = (y_idx + ngy//2) % ngy
+
+        y_idx = (yle + pos) % ngy
+        y = (pos - vg + yle) / half_supp
         _es_kernel(y, ykern, betak, mu)
 
         for c in range(ncorr):
@@ -392,15 +175,16 @@ def vis2im(
   # make sure it is even and a good size for the FFT
   while ngx % 2:
     ngx = good_size(ngx + 1)
-  xcorrector = grid_corrector(ngx, alpha, beta, mu)
+  dom = np.linspace(-0.5, 0.5, ngx, endpoint=False)
+  xcorrector = grid_corrector(dom, alpha, beta, mu)
   padxl = (ngx - nx) // 2
   padxr = ngx - nx - padxl
   slcx = slice(padxl, -padxr)
   ngy = good_size(int(sigma * ny))
-  # make sure it is even and a good size for the FFT
   while ngy % 2:
     ngy = good_size(ngy + 1)
-  ycorrector = grid_corrector(ngy, alpha, beta, mu)
+  dom = np.linspace(-0.5, 0.5, ngy, endpoint=False)
+  ycorrector = grid_corrector(dom, alpha, beta, mu)
   padyl = (ngy - ny) // 2
   padyr = ngy - ny - padyl
   slcy = slice(padyl, -padyr)
@@ -410,7 +194,7 @@ def vis2im(
 
   vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
 
-  grid = grid_data_np(
+  grid = grid_data(
     uvw,
     freq,
     data,
@@ -436,9 +220,8 @@ def vis2im(
     vsign=1,
   )
 
-  # now the FFTs
   # the *ngx*ngy corrects for the FFT normalisation
-  dirty = np.fft.ifft2(iFs(grid), axes=(-2, -1)) * ngx * ngy
+  dirty = np.fft.ifft2(grid, axes=(-2, -1)) * ngx * ngy
   dirty = Fs(dirty.real)[:, slcx, slcy]
   # apply taper
   dirty /= corrector
@@ -446,7 +229,7 @@ def vis2im(
 
 
 @njit(**JIT_OPTIONS)
-def wgrid_data_np(
+def wgrid_data(
   uvw: npt.NDArray,
   freq: npt.NDArray,
   data: npt.NDArray,
@@ -468,7 +251,7 @@ def wgrid_data_np(
   dw: float,
   nw: int,
   sigma=2.0,
-  alpha=10,
+  alpha=5,
   beta=2.3,
   mu=0.5,
   usign=1,
@@ -478,24 +261,10 @@ def wgrid_data_np(
   ntime, nbl, nchan, ncorr = data.shape
   # create a grid per wplane
   vis_grid = np.zeros((nc, nw, ngx, ngy), dtype=data.dtype)
-
-  # ufreq
-  u_cell = 1 / (ngx * cellx)
-  umax = 1 / cellx / 2
-
-  # vfreq
-  v_cell = 1 / (ngy * celly)
-  vmax = 1 / celly / 2
-
-  # wfreq
-  w_cell = dw
-  wmax = w0 + (nw - 1) * dw
-  wgrid = w0 + np.arange(nw) * dw
-
   normfreq = freq / LIGHTSPEED
   half_supp = alpha / 2
   betak = beta * alpha
-  pos = (np.arange(alpha) - half_supp).astype(np.int64)
+  pos = np.arange(alpha).astype(np.int64)
   xkern = np.zeros(alpha)
   ykern = np.zeros(alpha)
   zkern = np.zeros(alpha)
@@ -516,9 +285,9 @@ def wgrid_data_np(
 
         # current uv coords
         chan_normfreq = normfreq[chan]
-        u_tmp = uvw_row[0] * chan_normfreq * usign
-        v_tmp = uvw_row[1] * chan_normfreq * vsign
-        w_tmp = uvw_row[1] * chan_normfreq * wsign
+        u_tmp = uvw_row[0] * chan_normfreq * usign * cellx
+        v_tmp = uvw_row[1] * chan_normfreq * vsign * celly
+        w_tmp = uvw_row[2] * chan_normfreq
         # only use half the w grid due to Hermitian symmetry
         if w_tmp < 0:
           u_tmp = -u_tmp
@@ -526,36 +295,35 @@ def wgrid_data_np(
           w_tmp = -w_tmp
           vis = np.conjugate(vis)
 
-        # pixel coordinates
-        ug = (u_tmp + umax) / u_cell
-        vg = (v_tmp + vmax) / v_cell
-        wg = (w_tmp + wmax) / w_cell
+        # uv coordinates on the FFT shifted grid
+        ug = (ngx * u_tmp) % ngx
+        vg = (ngy * v_tmp) % ngy
 
-        # indices
-        u_idx = int(np.round(ug))
-        v_idx = int(np.round(vg))
-        w_idx = int(np.round(wg))
+        # w coordinate on the grid
+        wg = (w_tmp - w0) / dw
 
-        # the grid position is pos + u_idx on the un-fftshifted grid
-        x_idx = pos + u_idx
-        x = (x_idx - ug) / half_supp
-        # this finds the index on the fftshifted grid
-        # x_idx = (x_idx + ngx//2) % ngx
+        # start indices
+        xle = int(np.round(ug)) - alpha // 2
+        yle = int(np.round(vg)) - alpha // 2
+        zle = int(np.round(wg)) - alpha // 2
+
+        # the grid indices on fftshifted grid
+        x_idx = (xle + pos) % ngx
+        # kernel coordinates
+        x = (pos - ug + xle) / half_supp
         _es_kernel(x, xkern, betak, mu)
 
-        y_idx = pos + v_idx
-        y = (y_idx - vg) / half_supp
-        # y_idx = (y_idx + ngy//2) % ngy
+        y_idx = (yle + pos) % ngy
+        y = (pos - vg + yle) / half_supp
         _es_kernel(y, ykern, betak, mu)
 
-        w_diff = np.abs(wgrid - w_tmp)
-        w_idx = np.nonzero(w_diff == w_diff.min())[0]
-        z_idx = pos + w_idx
-        # z = (z_idx - wg) / half_supp
-        z = (wgrid - w_tmp) / dw / half_supp
+        z_idx = zle + pos
+        z = (pos - wg + zle) / half_supp
+        # This is the same as
+        # z_idx = np.arange(nw)
+        # z = (wgrid - w_tmp) / dw / half_supp
+        # but only within the support of the kernel
         _es_kernel(z, zkern, betak, mu)
-
-        # import ipdb; ipdb.set_trace()
 
         for c in range(ncorr):
           wc = wgt[c]
@@ -589,18 +357,22 @@ def vis2im_wgrid(
   beta=2.3,
   mu=0.5,
 ):
+  # ngx = int(sigma * nx)
   ngx = good_size(int(sigma * nx))
   # make sure it is even and a good size for the FFT
   while ngx % 2:
     ngx = good_size(ngx + 1)
-  xcorrector = grid_corrector(ngx, alpha, beta, mu)
+  dom = np.linspace(-0.5, 0.5, ngx, endpoint=False)
+  xcorrector = grid_corrector(dom, alpha, beta, mu)
   padxl = (ngx - nx) // 2
   padxr = ngx - nx - padxl
   slcx = slice(padxl, -padxr)
+  # ngy = int(sigma * ny)
   ngy = good_size(int(sigma * ny))
   while ngy % 2:
     ngy = good_size(ngy + 1)
-  ycorrector = grid_corrector(ngy, alpha, beta, mu)
+  dom = np.linspace(-0.5, 0.5, ngy, endpoint=False)
+  ycorrector = grid_corrector(dom, alpha, beta, mu)
   padyl = (ngy - ny) // 2
   padyr = ngy - ny - padyl
   slcy = slice(padyl, -padyr)
@@ -609,24 +381,25 @@ def vis2im_wgrid(
   corrector = xcorrector[slcx, None] * ycorrector[None, slcy]
 
   # get number of w grids
-  wmin = np.abs(uvw[:, :, 2].ravel() * freq.min() / LIGHTSPEED).min()
   wmax = np.abs(uvw[:, :, 2].ravel() * freq.max() / LIGHTSPEED).max()
+  wmin = np.abs(uvw[:, :, 2].ravel() * freq.min() / LIGHTSPEED).min()
   x, y = np.meshgrid(*[-ss / 2 + np.arange(ss) for ss in (nx, ny)], indexing="ij")
   x *= cellx
   y *= celly
   eps = x**2 + y**2
   nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
-  # missing factor of a half compared to expression in the paper but
-  # this gives the same w parameters as reported by the wgridder
-  dw = 1 / (sigma * np.abs(nm1).max())
-  nw = int(np.round((wmax - wmin) / dw)) + alpha
-  # different from expression in paper?
+  # removing the factor of a half compared to expression in the
+  # paper gives the same w parameters as reported by the wgridder
+  # but I can't seem to get that to agree with the DFT
+  dw = 1.0 / (2 * sigma * np.abs(nm1).max())
+  nw = int(np.ceil((wmax - wmin) / dw)) + alpha
   w0 = (wmin + wmax) / 2 - dw * (nw - 1) / 2
-  wcorrector = grid_corrector2D(nm1 * dw, alpha, beta, mu) * (nm1 + 1)
+  wcorrector = grid_corrector(nm1 * dw, alpha, beta, mu) * (nm1 + 1)
 
+  # this should be compiled in the overload
   vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
 
-  grid = wgrid_data_np(
+  grid = wgrid_data(
     uvw,
     freq,
     data,
@@ -655,9 +428,8 @@ def vis2im_wgrid(
     vsign=1,
     wsign=-1,
   )
-  # 2D FFTs
   # the *ngx*ngy corrects for the FFT normalisation
-  dirty = np.fft.ifft2(iFs(grid), axes=(-2, -1)) * ngx * ngy
+  dirty = np.fft.ifft2(grid, axes=(-2, -1)) * ngx * ngy
   dirty = Fs(dirty)[:, :, slcx, slcy]
 
   # w-screens
@@ -665,12 +437,11 @@ def vis2im_wgrid(
   wscreens = np.exp(-2j * np.pi * nm1[None, :, :] * wgrid[:, None, None]).astype(
     data.dtype
   )
-  dirty *= wscreens[None, :, :, :]
+  dirty = dirty * wscreens[None, :, :, :]
   # sum over w axis
   dirty = dirty.real.sum(axis=1)
   # xy tapers
   dirty /= corrector[None, :, :]
   # w-taper * n
-
-  dirty /= wcorrector
+  dirty /= wcorrector[None, :, :]
   return dirty

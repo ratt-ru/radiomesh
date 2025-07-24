@@ -42,11 +42,7 @@ def explicit_gridder(
   eps = x**2 + y**2
   if apply_w:
     nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
-    n = (nm1 + 1)[
-      None,
-      :,
-      :,
-    ]
+    n = (nm1 + 1)[None, :, :]
   else:
     nm1 = 0.0
     n = 1.0
@@ -131,10 +127,8 @@ def test_tapers(ms_name):
   assert np.allclose(1 + xdiff, 1, atol=1e-10, rtol=1e-10)
   assert np.allclose(1 + ydiff, 1, atol=1e-10, rtol=1e-10)
 
-  # grid coordinates
-  ngx = nx  # int(sigma*nx)
-  ngy = ny  # int(sigma*ny)
-  x, y = np.meshgrid(*[-ss / 2 + np.arange(ss) for ss in (ngx, ngy)], indexing="ij")
+  # image grid coordinates
+  x, y = np.meshgrid(*[-ss / 2 + np.arange(ss) for ss in (nx, ny)], indexing="ij")
   x *= cell
   y *= cell
 
@@ -143,203 +137,28 @@ def test_tapers(ms_name):
   wabs = np.abs(w)
   wmax = wabs.max()
   wmin = -wmax
-
   # this tests eqn 10 i.e. the grid corrector in the w-direction
   eps = x**2 + y**2
   nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
-  ntilde = nm1.ravel()
-  dw = 1 / (2 * sigma * np.abs(ntilde).max())  # on the padded grid
+  dw = 1 / (2 * sigma * np.abs(nm1).max())
   nw = int(np.ceil((wmax - wmin) / dw)) + alpha
   w0 = wmin - dw * (alpha - 1) / 2
-  wcorrector = grid_corrector(ntilde * dw, alpha, beta, mu)
+  wcorrector = grid_corrector(nm1 * dw, alpha, beta, mu)
   wgrid = w0 + np.arange(nw) * dw
   for ww in w[0::100]:
-    res = np.exp(-2j * np.pi * ww * ntilde)
+    res = np.exp(-2j * np.pi * ww * nm1)
     z = (wgrid - ww) / dw
     zkern = es_kernel(z, beta, mu, alpha)
-    tmp = np.exp(-2j * np.pi * ntilde[:, None] * wgrid[None, :])
-    tmp2 = tmp * zkern[None, :]
+    tmp = np.exp(-2j * np.pi * nm1[:, :, None] * wgrid[None, None, :])
+    tmp2 = tmp * zkern[None, None, :]
     res2 = np.sum(tmp2, axis=-1)
-    # this is the same as because dc=dw
+    # this is the same as (since dc=dw)
     # res2 = np.trapezoid(tmp2/dw, wgrid, axis=-1)
     res2 /= wcorrector
     diff = np.abs(res - res2)
     assert_array_almost_equal(1 + diff, 1.0, decimal=7)
 
 
-def test_eqn789(ms_name):
-  fov = 1.0
-  sigma = 2.0
-  alpha = 10
-  beta = 2.3
-  mu = 0.5
-
-  dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
-  dt_ms = dt[dt.groups[1]]
-  vis = dt_ms.VISIBILITY.values
-  vis[:, :, :, 0] = 1.0
-  vis[:, :, :, -1] = 1.0
-  freq = dt_ms.frequency.values
-  uvw = dt_ms.UVW.values
-
-  umax = np.abs(uvw[:, :, 0]).max()
-  vmax = np.abs(uvw[:, :, 1]).max()
-  uv_max = np.maximum(umax, vmax)
-  cell = 1.0 / (2 * uv_max * freq.max() / LIGHTSPEED)
-  nx = int(np.ceil(np.deg2rad(fov) / cell))
-  if nx % 2:
-    nx += 1
-  ny = nx // 2
-
-  # grid coordinates
-  ngx = int(sigma * nx)
-  ngy = int(sigma * ny)
-  x, y = np.meshgrid(*[-ss / 2 + np.arange(ss) for ss in (ngx, ngy)], indexing="ij")
-  x *= cell
-  y *= cell
-
-  # get number of w grids
-  w = uvw[:, :, -1].ravel() * freq.max() / LIGHTSPEED
-  wabs = np.abs(w)
-  wmax = wabs.max()
-  wmin = -wmax
-
-  # this tests eqn 10 in the paper to test the 2D grid corrector for the w-direction
-  eps = x**2 + y**2
-  nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
-  low = 0
-  high = ngx
-  ntilde = nm1.ravel()[low:high, None]
-  dw = 1 / (2 * np.abs(nm1).max())  # on the padded grid
-  w0 = wmin - dw * (alpha - 1) / 2
-  wf = wmax + dw * (alpha - 1) / 2
-  for ww in w[0::100]:
-    wterm = np.exp(-2j * np.pi * ww * ntilde)
-    # eqn 7 and 8 hold for any choice of k
-    k = np.random.random(ntilde.size) - 0.5
-    taper = grid_corrector(k, alpha, beta, mu)[:, None]
-    lhs = (wterm * taper).ravel()
-
-    # centered kernel eqn 7
-    wgrid = np.linspace(-alpha, alpha, nx)
-    tmp = np.exp(-2j * np.pi * k[:, None] * wgrid[None, :])
-    kern = es_kernel(wgrid, beta, mu, alpha)
-    tmp2 = wterm * kern[None, :] * tmp
-    rhs = np.trapezoid(tmp2, wgrid)
-    diff = np.abs(lhs - rhs)
-    assert_array_almost_equal(1 + diff, 1.0, decimal=6)
-
-    # uncentered kernel eqn 8
-    wgrid = np.linspace(w0, wf, nx)
-    z = (wgrid - ww) / dw
-    tmp = np.exp(-2j * np.pi * k[:, None] * z[None, :]) / dw
-    kern = es_kernel(z, beta, mu, alpha)
-    tmp2 = wterm * kern[None, :] * tmp
-    rhs = np.trapezoid(tmp2, wgrid)
-    diff = np.abs(lhs - rhs)
-    assert_array_almost_equal(1 + diff, 1.0, decimal=7)
-
-    # eqn 9 only holds when k overlaps with ntilde*dw
-    k = (ntilde * dw).ravel()
-    taper = grid_corrector(k, alpha, beta, mu)[:, None]
-    lhs = (wterm * taper).ravel()
-    tmp = np.exp(-2j * np.pi * ntilde * wgrid[None, :]) / dw
-    tmp2 = tmp * kern[None, :]
-    rhs = np.trapezoid(tmp2, wgrid)
-    diff = np.abs(lhs - rhs)
-    assert_array_almost_equal(1 + diff, 1.0, decimal=7)
-
-
-@pmp("fov", (1.0,))
-@pmp("precision", ("single",))
-def test_grid_data_now(fov, precision, ms_name):
-  np.random.seed(420)
-  if precision == "single":
-    # real_type = "f4"
-    complex_type = "c8"
-  else:
-    # real_type = "f8"
-    complex_type = "c16"
-
-  dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
-  dt_ms = dt[dt.groups[1]]
-  dt_ant = dt[dt.groups[2]]
-  vis = dt_ms.VISIBILITY.values
-  vis[:, :, :, 0] = 1.0
-  vis[:, :, :, -1] = 1.0
-  wgt = dt_ms.WEIGHT.values
-  flag = dt_ms.FLAG.values
-  freq = dt_ms.frequency.values
-  uvw = dt_ms.UVW.values
-  ntime, nbl, nchan, ncorr = vis.shape
-  nant = dt_ant.antenna_name.size
-  jones = np.zeros((ntime, nant, nchan, 1, 2, 2), dtype=complex_type)
-  jones[:, :, :, :, 0, 0] = 1.0
-  jones[:, :, :, :, 1, 1] = 1.0
-  _, ant1 = np.unique(dt_ms.baseline_antenna1_name.values, return_inverse=True)
-  _, ant2 = np.unique(dt_ms.baseline_antenna2_name.values, return_inverse=True)
-  pols = dt_ms.polarization.values
-  if "XX" in pols or "YY" in pols:
-    pol = "linear"
-  elif "RR" in pols or "LL" in pols:
-    pol = "circular"
-  product = "IQUV"
-  vis_func, wgt_func = stokes_funcs(jones, product, pol, ncorr)
-
-  # if we don't grid at Nyquist some uv points may fall off the grid
-  umax = np.abs(uvw[:, :, 0]).max()
-  vmax = np.abs(uvw[:, :, 1]).max()
-  uv_max = np.maximum(umax, vmax)
-  cell = 1.0 / (2 * uv_max * freq.max() / LIGHTSPEED)
-  nx = int(np.ceil(np.deg2rad(fov) / cell))
-  if nx % 2:
-    nx += 1
-  ny = nx
-
-  try:
-    dirty_dft = np.load("radiomesh/tests/data/dirty_now.npy")
-  except Exception:
-    dirty_dft = explicit_gridder(
-      uvw,
-      freq,
-      vis,
-      wgt,
-      flag,
-      jones,
-      ant1,
-      ant2,
-      nx,
-      ny,
-      cell,
-      cell,
-      False,
-      vis_func,
-      wgt_func,
-    )
-    np.save("radiomesh/tests/data/dirty_now.npy", dirty_dft)
-  dirty = vis2im(
-    uvw,
-    freq,
-    vis,
-    wgt,
-    flag,
-    jones,
-    ant1,
-    ant2,
-    nx,
-    ny,
-    cell,
-    cell,
-    pol,
-    product,
-    ncorr,
-  )
-  # we compare fractional differences because abs values can be very large
-  diff = (dirty - dirty_dft) / dirty_dft.max()
-  assert np.allclose(1 + diff, 1, rtol=1e-4, atol=1e-4)
-
-
-@pytest.mark.skip(reason="Future Landman's problem")
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_grid_data(fov, precision, ms_name):
@@ -386,27 +205,110 @@ def test_grid_data(fov, precision, ms_name):
     nx += 1
   ny = nx
 
-  try:
-    dirty_dft = np.load("radiomesh/tests/data/dirty.npy")
-  except Exception:
-    dirty_dft = explicit_gridder(
-      uvw,
-      freq,
-      vis,
-      wgt,
-      flag,
-      jones,
-      ant1,
-      ant2,
-      nx,
-      ny,
-      cell,
-      cell,
-      True,
-      vis_func,
-      wgt_func,
-    )
-    np.save("radiomesh/tests/data/dirty.npy", dirty_dft)
+  # we can probably speed up the tests by using the wgridder as reference
+  dirty_dft = explicit_gridder(
+    uvw,
+    freq,
+    vis,
+    wgt,
+    flag,
+    jones,
+    ant1,
+    ant2,
+    nx,
+    ny,
+    cell,
+    cell,
+    False,
+    vis_func,
+    wgt_func,
+  )
+
+  dirty = vis2im(
+    uvw,
+    freq,
+    vis,
+    wgt,
+    flag,
+    jones,
+    ant1,
+    ant2,
+    nx,
+    ny,
+    cell,
+    cell,
+    pol,
+    product,
+    ncorr,
+  )
+  # we compare fractional differences because abs values can be very large
+  diff = (dirty - dirty_dft) / dirty_dft.max()
+  assert_array_almost_equal(1 + diff, 1.0, decimal=6)
+
+
+@pmp("fov", (1.0,))
+@pmp("precision", ("single",))
+def test_wgrid_data(fov, precision, ms_name):
+  np.random.seed(420)
+  if precision == "single":
+    # real_type = "f4"
+    complex_type = "c8"
+  else:
+    # real_type = "f8"
+    complex_type = "c16"
+
+  dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
+  dt_ms = dt[dt.groups[1]]
+  dt_ant = dt[dt.groups[2]]
+  vis = dt_ms.VISIBILITY.values
+  vis[:, :, :, 0] = 1.0
+  vis[:, :, :, -1] = 1.0
+  wgt = dt_ms.WEIGHT.values
+  flag = dt_ms.FLAG.values
+  freq = dt_ms.frequency.values
+  uvw = dt_ms.UVW.values
+  ntime, nbl, nchan, ncorr = vis.shape
+  nant = dt_ant.antenna_name.size
+  jones = np.zeros((ntime, nant, nchan, 1, 2, 2), dtype=complex_type)
+  jones[:, :, :, :, 0, 0] = 1.0
+  jones[:, :, :, :, 1, 1] = 1.0
+  _, ant1 = np.unique(dt_ms.baseline_antenna1_name.values, return_inverse=True)
+  _, ant2 = np.unique(dt_ms.baseline_antenna2_name.values, return_inverse=True)
+  pols = dt_ms.polarization.values
+  if "XX" in pols or "YY" in pols:
+    pol = "linear"
+  elif "RR" in pols or "LL" in pols:
+    pol = "circular"
+  product = "IQUV"
+  vis_func, wgt_func = stokes_funcs(jones, product, pol, ncorr)
+
+  # if we don't grid at Nyquist some uv points may fall off the grid
+  umax = np.abs(uvw[:, :, 0]).max()
+  vmax = np.abs(uvw[:, :, 1]).max()
+  uv_max = np.maximum(umax, vmax)
+  cell = 1.0 / (2 * uv_max * freq.max() / LIGHTSPEED)
+  nx = int(np.ceil(np.deg2rad(fov) / cell))
+  if nx % 2:
+    nx += 1
+  ny = nx
+
+  dirty_dft = explicit_gridder(
+    uvw,
+    freq,
+    vis,
+    wgt,
+    flag,
+    jones,
+    ant1,
+    ant2,
+    nx,
+    ny,
+    cell,
+    cell,
+    True,
+    vis_func,
+    wgt_func,
+  )
 
   dirty = vis2im_wgrid(
     uvw,
@@ -428,17 +330,4 @@ def test_grid_data(fov, precision, ms_name):
 
   # we compare fractional differences because abs values can be very large
   diff = (dirty - dirty_dft) / dirty_dft.max()
-  assert np.allclose(1 + diff, 1, rtol=1e-4, atol=1e-4)
-
-
-# wgridder verbosity with
-# nthreads=1, dirty=(204x204), grid=(480x480x5), alpha=5, eps=0.0001
-# nrow=21060, nchan=8, nvis=168480/168480
-# w=[0.00377211; 667.09], min(n-1)=-7.63818e-05, dw=5564.15, (wmax-wmin)/dw=0.11989
-# memory overhead: 0.000373185GB (index) + 0.00171661GB (2D arrays)
-
-
-# sigma=2.3529411764705883,
-# alpha=6,
-# beta=2.1406712849934895,
-# mu=0.5284273783365884,
+  assert_array_almost_equal(1 + diff, 1.0, decimal=6)
