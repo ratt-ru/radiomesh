@@ -250,12 +250,12 @@ def wgrid_data(
   w0: float,
   dw: float,
   nw: int,
-  sigma=2.0,
-  alpha=5,
-  beta=2.3,
-  mu=0.5,
-  usign=1,
-  vsign=1,
+  sigma: float =2.0,
+  alpha: float =5,
+  beta: float =2.3,
+  mu: float =0.5,
+  usign: float =1,
+  vsign: float =1,
   wsign=-1,
 ):
   ntime, nbl, nchan, ncorr = data.shape
