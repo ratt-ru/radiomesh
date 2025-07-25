@@ -68,8 +68,6 @@ def explicit_gridder(
           vis = np.conjugate(vis)
         phase = freq[chan] / LIGHTSPEED * (x * u + y * v - w * nm1)
         cphase = np.exp(2j * np.pi * phase)
-        # this should accumulate onto each corr separately
-        # since there are 4 threads and ncorr=4
         for corr in range(ncorr):
           res[corr] += (vis[corr] * wgt[corr] * cphase).real
   return res / n
