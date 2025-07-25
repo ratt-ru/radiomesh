@@ -75,16 +75,16 @@ def explicit_gridder(
   return res / n
 
 
-def taper_trapz(dom, alpha=5, beta=2.3, mu=0.5):
-  npix = dom.size
+def taper_trapz(domain, alpha=5, beta=2.3, mu=0.5):
+  npix = domain.size
   res = np.zeros(npix, dtype=np.float64)
-  alphao2 = alpha / 2
-  x = np.linspace(-alphao2, alphao2, npix)
+  half_alpha = alpha / 2
+  x = np.linspace(-half_alpha, half_alpha, npix)
   kern = np.zeros_like(x)
   betak = alpha * beta
-  for i, k in enumerate(dom):
+  for i, k in enumerate(domain):
     kern[...] = 0.0
-    tmp = np.cos(-2 * np.pi * k * x) * _es_kernel(x / alphao2, kern, betak, mu)
+    tmp = np.cos(-2 * np.pi * k * x) * _es_kernel(x / half_alpha, kern, betak, mu)
     res[i] = np.trapezoid(tmp, x)
   return res
 

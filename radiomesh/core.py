@@ -174,16 +174,16 @@ def vis2im(
   # make sure it is even and a good size for the FFT
   while ngx % 2:
     ngx = good_size(ngx + 1)
-  dom = np.linspace(-0.5, 0.5, ngx, endpoint=False)
-  xcorrector = grid_corrector(dom, alpha, beta, mu)
+  domain = np.linspace(-0.5, 0.5, ngx, endpoint=False)
+  xcorrector = grid_corrector(domain, alpha, beta, mu)
   padxl = (ngx - nx) // 2
   padxr = ngx - nx - padxl
   slcx = slice(padxl, -padxr)
   ngy = good_size(int(sigma * ny))
   while ngy % 2:
     ngy = good_size(ngy + 1)
-  dom = np.linspace(-0.5, 0.5, ngy, endpoint=False)
-  ycorrector = grid_corrector(dom, alpha, beta, mu)
+  domain = np.linspace(-0.5, 0.5, ngy, endpoint=False)
+  ycorrector = grid_corrector(domain, alpha, beta, mu)
   padyl = (ngy - ny) // 2
   padyr = ngy - ny - padyl
   slcy = slice(padyl, -padyr)
@@ -356,8 +356,8 @@ def vis2im_wgrid(
   # make sure it is even and a good size for the FFT
   while ngx % 2:
     ngx = good_size(ngx + 1)
-  dom = np.linspace(-0.5, 0.5, ngx, endpoint=False)
-  xcorrector = grid_corrector(dom, alpha, beta, mu)
+  domain = np.linspace(-0.5, 0.5, ngx, endpoint=False)
+  xcorrector = grid_corrector(domain, alpha, beta, mu)
   padxl = (ngx - nx) // 2
   padxr = ngx - nx - padxl
   slcx = slice(padxl, -padxr)
@@ -365,8 +365,8 @@ def vis2im_wgrid(
   ngy = good_size(int(sigma * ny))
   while ngy % 2:
     ngy = good_size(ngy + 1)
-  dom = np.linspace(-0.5, 0.5, ngy, endpoint=False)
-  ycorrector = grid_corrector(dom, alpha, beta, mu)
+  domain = np.linspace(-0.5, 0.5, ngy, endpoint=False)
+  ycorrector = grid_corrector(domain, alpha, beta, mu)
   padyl = (ngy - ny) // 2
   padyr = ngy - ny - padyl
   slcy = slice(padyl, -padyr)
