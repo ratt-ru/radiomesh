@@ -94,7 +94,7 @@ def eval_es_kernel(
     raise NotImplementedError(f"Polynomial kernels are required for e0 ({E0}) != 0.5")
 
   def kernel_fn(index: float, pixel: float) -> float:
-    x = (index - pixel + 0.5) / HALF_SUPPORT
+    x = (index - pixel) / HALF_SUPPORT
     value = np.exp(BETA * HALF_SUPPORT * (np.sqrt(1.0 - x * x) - 1.0))
     # Above is only defined for [-1.0, 1.0]
     # Zero after possible vectorisation (SIMD) of the above expression

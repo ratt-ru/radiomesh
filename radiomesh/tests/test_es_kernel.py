@@ -29,9 +29,9 @@ def test_es_kernel_intrinsic():
   def fn(u):
     i = int(np.round(u))
     p = es_kernel_positions(KERNEL, i)
-    return p, eval_es_kernel(KERNEL, p, u)
+    return eval_es_kernel(KERNEL, p, u)
 
   u = 2.3
-  pos, kernel_values = fn(u)
-  assert all(kv > 0 for kv in kernel_values)
-  # assert kernel_values == tuple(map(kernel.kernel_fn, pos, [u] * len(pos)))
+  kernel_values = fn(u)
+  assert kernel_values[0] == 0  # The first value lies outside the kernel support?
+  assert sum(int(kv > 0) for kv in kernel_values) == KERNEL.value.support - 1
