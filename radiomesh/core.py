@@ -1,449 +1,437 @@
+from functools import partial
+from typing import Callable
+
 import numpy as np
-import sympy as sm
-from numba import literally, njit, types
-from numba.extending import overload
-from sympy.physics.quantum import TensorProduct
-from sympy.utilities.lambdify import lambdify
+import numpy.typing as npt
+from ducc0.fft import good_size
+from numba import njit
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.utils import wgridder_conventions
+from radiomesh.stokes import stokes_funcs
 
-JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": True}
+fftshift = partial(np.fft.fftshift, axes=(-2, -1))
+ifftshift = partial(np.fft.ifftshift, axes=(-2, -1))
+
+JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": False}
+
+
+def grid_corrector(domain, alpha, beta, mu):
+  """
+  Use Gauss-Legendre quadrature to compute the grid corrector (taper).
+  """
+  # even number of roots required to exploit even symmetry of integrand
+  nroots = 2 * alpha
+  if nroots % 2:
+    nroots += 1
+  q, wgt = np.polynomial.legendre.leggauss(nroots)
+  idx = q > 0
+  q = q[idx]
+  wgt = wgt[idx]
+  shape = np.shape(domain)
+  xkern = np.zeros(q.size)
+  _es_kernel(q, xkern, alpha * beta, mu)
+  if len(shape) > 1:
+    z = np.einsum("ij,k->ijk", domain, q)
+  else:
+    z = np.outer(domain, q)
+  # note the ndim dependent broadcast
+  tmp = alpha * np.sum(np.cos(np.pi * alpha * z) * xkern * wgt, axis=-1)
+  return np.reshape(tmp, shape)
 
 
 @njit(**JIT_OPTIONS, inline="always")
-def _es_kernel(x, y, xkern, ykern, betak):
-  for i in range(x.size):
-    xkern[i] = np.exp(betak * (np.sqrt(1 - x[i] * x[i]) - 1))
-    ykern[i] = np.exp(betak * (np.sqrt(1 - y[i] * y[i]) - 1))
+def _es_kernel(x, kern, betak, mu):
+  """
+  Scaled version of the kernel
+
+  exp(betak * (power(1 - x ** 2, mu) - 1))
+
+  i.e. support squashed to [-1, 1] with betak = beta * alpha
+  """
+  kern[...] = 0.0
+  mask = np.abs(x) <= 1
+  kern[mask] = np.exp(betak * (np.power(1 - x[mask] ** 2, mu) - 1))
+  return kern
+
+
+@njit(**JIT_OPTIONS)
+def es_kernel(x, beta, mu, alpha):
+  """
+  Unscaled version of the kernel
+
+  exp(alpha * beta * (power(1 - (2*x/alpha) ** 2, mu) - 1))
+
+  i.e. x is in pixel units
+  """
+  kern = np.zeros_like(x, dtype=x.dtype)
+  _es_kernel(2 * x / alpha, kern, beta * alpha, mu)
+  return kern
 
 
 @njit(**JIT_OPTIONS)
 def grid_data(
-  data,
-  weight,
-  flag,
-  jones,
-  tbin_idx,
-  tbin_counts,
-  ant1,
-  ant2,
-  nx,
-  ny,
-  nx_psf,
-  ny_psf,
-  pol,
-  product,
-  nc,
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  ngx: int,
+  ngy: int,
+  cellx: float,
+  celly: float,
+  nc: int,
+  vis_func: Callable,
+  wgt_func: Callable,
+  alpha: float = 10,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = -1,
 ):
-  vis, wgt = _grid_data_impl(
-    data,
-    weight,
-    flag,
-    jones,
-    tbin_idx,
-    tbin_counts,
-    ant1,
-    ant2,
-    nx,
-    ny,
-    nx_psf,
-    ny_psf,
-    literally(pol),
-    literally(product),
-    literally(nc),
-  )
+  ntime, nbl, nchan, ncorr = data.shape
+  vis_grid = np.zeros((nc, ngx, ngy), dtype=data.dtype)
+  normfreq = freq / LIGHTSPEED
+  half_supp = alpha / 2
+  betak = beta * alpha
+  pos = np.arange(alpha)
+  xkern = np.zeros(alpha)
+  ykern = np.zeros(alpha)
+  for t in range(ntime):
+    for bl in range(nbl):
+      p = int(ant1[bl])
+      q = int(ant2[bl])
+      gp = jones[t, p, :, 0]
+      gq = jones[t, q, :, 0]
+      uvw_row = uvw[t, bl]
+      wgt_row = weight[t, bl]
+      vis_row = data[t, bl]
+      for chan in range(nchan):
+        if flag[t, bl, chan].any():
+          continue
+        wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
+        vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
 
-  return vis, wgt
+        # current uv coords
+        chan_normfreq = normfreq[chan]
+        u_tmp = uvw_row[0] * chan_normfreq * usign * cellx
+        v_tmp = uvw_row[1] * chan_normfreq * vsign * celly
+
+        # uv coordinates on the FFT shifted grid
+        ug = (ngx * u_tmp) % ngx
+        vg = (ngy * v_tmp) % ngy
+
+        # start indices
+        xle = int(np.round(ug)) - alpha // 2
+        yle = int(np.round(vg)) - alpha // 2
+
+        # the grid indices on fftshifted grid
+        x_idx = (xle + pos) % ngx
+        # kernel coordinates
+        x = (pos - ug + xle) / half_supp
+        _es_kernel(x, xkern, betak, mu)
+
+        y_idx = (yle + pos) % ngy
+        y = (pos - vg + yle) / half_supp
+        _es_kernel(y, ykern, betak, mu)
+
+        for c in range(ncorr):
+          wc = wgt[c]
+          for i, xi in zip(x_idx, xkern):
+            for j, yj in zip(y_idx, ykern):
+              xyw = xi * yj * wc
+              vis_grid[c, i, j] += xyw * vis[c]
+
+  return vis_grid
 
 
-def _grid_data_impl(
-  data,
-  weight,
-  flag,
-  jones,
-  tbin_idx,
-  tbin_counts,
-  ant1,
-  ant2,
-  nx,
-  ny,
-  nx_psf,
-  ny_psf,
-  pol,
-  product,
-  nc,
+def vis2im(
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  nx: int,
+  ny: int,
+  cellx: float,
+  celly: float,
+  pol: str,
+  product: str,
+  nc: int,
+  sigma: float = 2.0,
+  alpha: float = 10,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = 1,
 ):
-  raise NotImplementedError
+  ngx = good_size(int(sigma * nx))
+  # make sure it is even and a good size for the FFT
+  while ngx % 2:
+    ngx = good_size(ngx + 1)
+  domain = np.linspace(-0.5, 0.5, ngx, endpoint=False)
+  xcorrector = grid_corrector(domain, alpha, beta, mu)
+  padxl = (ngx - nx) // 2
+  padxr = ngx - nx - padxl
+  slcx = slice(padxl, -padxr)
+  ngy = good_size(int(sigma * ny))
+  while ngy % 2:
+    ngy = good_size(ngy + 1)
+  domain = np.linspace(-0.5, 0.5, ngy, endpoint=False)
+  ycorrector = grid_corrector(domain, alpha, beta, mu)
+  padyl = (ngy - ny) // 2
+  padyr = ngy - ny - padyl
+  slcy = slice(padyl, -padyr)
 
+  # taper
+  corrector = xcorrector[slcx, None] * ycorrector[None, slcy]
 
-@overload(
-  _grid_data_impl, prefer_literal=True, jit_options={**JIT_OPTIONS, "parallel": True}
-)
-def nb_grid_data_impl(
-  data,
-  weight,
-  flag,
-  jones,
-  tbin_idx,
-  tbin_counts,
-  ant1,
-  ant2,
-  nx,
-  ny,
-  nx_psf,
-  ny_psf,
-  k,
-  pol,
-  product,
-  nc,
-):
-  vis_func, wgt_func = stokes_funcs(data, jones, product, pol, nc)
+  vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
 
-  if product.literal_value in ["I", "Q", "U", "V"]:
-    ns = 1
-  elif product.literal_value == "DS":
-    ns = 2
-  elif product.literal_value == "FS":
-    ns = int(nc.literal_value)
-
-  usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
-
-  def _impl(
-    data,
-    weight,
-    flag,
+  grid = grid_data(
     uvw,
     freq,
+    data,
+    weight,
+    flag,
     jones,
-    tbin_idx,
-    tbin_counts,
     ant1,
     ant2,
-    nx,
-    ny,
-    cell_size_x,
-    cell_size_y,
-    pol,
-    product,
+    ngx,
+    ngy,
+    cellx,
+    celly,
     nc,
-    k=6,
-  ):
-    # for dask arrays we need to adjust the chunks to
-    # start counting from zero
-    tbin_idx -= tbin_idx.min()
-    nt = np.shape(tbin_idx)[0]
-    nrow, nchan, ncorr = data.shape
-    vis_grid = np.zeros((nx, ny, ns), dtype=data.dtype)
-    wgt_grid = np.zeros((nx, ny, ns), dtype=data.real.dtype)
+    vis_func,
+    wgt_func,
+    alpha=alpha,
+    beta=beta,
+    mu=mu,
+    usign=usign,
+    vsign=vsign,
+  )
 
-    # ufreq
-    u_cell = 1 / (nx * cell_size_x)
-    # shifts fftfreq such that they start at zero
-    # convenient to look up the pixel value
-    umax = np.abs(-1 / cell_size_x / 2 - u_cell / 2)
+  # the *ngx*ngy corrects for the FFT normalisation
+  dirty = np.fft.ifft2(grid, axes=(-2, -1)) * ngx * ngy
+  dirty = fftshift(dirty.real)[:, slcx, slcy]
+  # apply taper
+  dirty /= corrector
+  return dirty
 
-    # vfreq
-    v_cell = 1 / (ny * cell_size_y)
-    vmax = np.abs(-1 / cell_size_y / 2 - v_cell / 2)
 
-    normfreq = freq / LIGHTSPEED
-    ko2 = k / 2
-    betak = 2.3 * k
-    pos = np.arange(k) - ko2
-    xkern = np.zeros(k)
-    ykern = np.zeros(k)
-    for t in range(nt):
-      for row in range(tbin_idx[t], tbin_idx[t] + tbin_counts[t]):
-        p = int(ant1[row])
-        q = int(ant2[row])
-        gp = jones[t, p, :, 0]
-        gq = jones[t, q, :, 0]
-        uvw_row = uvw[row]
-        wgt_row = weight[row]
-        vis_row = data[row]
-        for chan in range(nchan):
-          if flag[row, chan]:
-            continue
-          wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
-          vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
+@njit(**JIT_OPTIONS)
+def wgrid_data(
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  ngx: int,
+  ngy: int,
+  cellx: float,
+  celly: float,
+  nc: int,
+  vis_func: Callable,
+  wgt_func: Callable,
+  w0: float,
+  dw: float,
+  nw: int,
+  alpha: float = 5,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = 1,
+):
+  ntime, nbl, nchan, ncorr = data.shape
+  # create a grid per wplane
+  vis_grid = np.zeros((nc, nw, ngx, ngy), dtype=data.dtype)
+  normfreq = freq / LIGHTSPEED
+  half_supp = alpha / 2
+  betak = beta * alpha
+  pos = np.arange(alpha).astype(np.int64)
+  xkern = np.zeros(alpha)
+  ykern = np.zeros(alpha)
+  zkern = np.zeros(alpha)
+  for t in range(ntime):
+    for bl in range(nbl):
+      p = int(ant1[bl])
+      q = int(ant2[bl])
+      gp = jones[t, p, :, 0]
+      gq = jones[t, q, :, 0]
+      uvw_row = uvw[t, bl]
+      wgt_row = weight[t, bl]
+      vis_row = data[t, bl]
+      for chan in range(nchan):
+        if flag[t, bl, chan].any():
+          continue
+        wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
+        vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
 
-          # current uv coords
-          chan_normfreq = normfreq[chan]
-          u_tmp = uvw_row[0] * chan_normfreq * usign
-          v_tmp = uvw_row[1] * chan_normfreq * vsign
-          # pixel coordinates
-          ug = (u_tmp + umax) / u_cell
-          vg = (v_tmp + vmax) / v_cell
-          # indices
-          u_idx = int(np.round(ug))
-          v_idx = int(np.round(vg))
+        # current uv coords
+        chan_normfreq = normfreq[chan]
+        u_tmp = uvw_row[0] * chan_normfreq * usign * cellx
+        v_tmp = uvw_row[1] * chan_normfreq * vsign * celly
+        w_tmp = uvw_row[2] * chan_normfreq
+        # only use half the w grid due to Hermitian symmetry
+        if w_tmp < 0:
+          u_tmp = -u_tmp
+          v_tmp = -v_tmp
+          w_tmp = -w_tmp
+          vis = np.conjugate(vis)
 
-          # the kernel is separable and only defined on [-1,1]
-          # do we ever need to check these bounds?
-          x_idx = pos + u_idx
-          x = (x_idx - ug + 0.5) / ko2
-          y_idx = pos + v_idx
-          y = (y_idx - vg + 0.5) / ko2
-          _es_kernel(x, y, xkern, ykern, betak)
+        # uv coordinates on the FFT shifted grid
+        ug = (ngx * u_tmp) % ngx
+        vg = (ngy * v_tmp) % ngy
 
-          for c in range(ncorr):
-            wc = wgt[c]
+        # w coordinate on the grid
+        wg = (w_tmp - w0) / dw
+
+        # start indices
+        xle = int(np.round(ug)) - alpha // 2
+        yle = int(np.round(vg)) - alpha // 2
+        zle = int(np.round(wg)) - alpha // 2
+
+        # the grid indices on fftshifted grid
+        x_idx = (xle + pos) % ngx
+        # kernel coordinates
+        x = (pos - ug + xle) / half_supp
+        _es_kernel(x, xkern, betak, mu)
+
+        y_idx = (yle + pos) % ngy
+        y = (pos - vg + yle) / half_supp
+        _es_kernel(y, ykern, betak, mu)
+
+        z_idx = zle + pos
+        z = (pos - wg + zle) / half_supp
+        # This is the same as
+        # z_idx = np.arange(nw)
+        # z = (wgrid - w_tmp) / dw / half_supp
+        # but only within the support of the kernel
+        _es_kernel(z, zkern, betak, mu)
+
+        for c in range(ncorr):
+          wc = wgt[c]
+          for k, zk in zip(z_idx, zkern):
             for i, xi in zip(x_idx, xkern):
               for j, yj in zip(y_idx, ykern):
-                xyw = xi * yj * wc
-                wgt_grid[c, i, j] += xyw
-                vis_grid[c, i, j] += xyw * vis[c]
+                xyzwc = xi * yj * zk * wc
+                vis_grid[c, k, i, j] += xyzwc * vis[c]
 
-    return (vis_grid, wgt_grid)
+  return vis_grid
 
-  _impl.returns = types.Tuple(
-    [types.Array(types.complex128, 3, "C"), types.Array(types.float64, 3, "C")]
+
+def vis2im_wgrid(
+  uvw: npt.NDArray,
+  freq: npt.NDArray,
+  data: npt.NDArray,
+  weight: npt.NDArray,
+  flag: npt.NDArray,
+  jones: npt.NDArray,
+  ant1: npt.NDArray,
+  ant2: npt.NDArray,
+  nx: int,
+  ny: int,
+  cellx: float,
+  celly: float,
+  pol: str,
+  product: str,
+  nc: int,
+  sigma: float = 2,
+  alpha: float = 10,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = 1,
+):
+  # ngx = int(sigma * nx)
+  ngx = good_size(int(sigma * nx))
+  # make sure it is even and a good size for the FFT
+  while ngx % 2:
+    ngx = good_size(ngx + 1)
+  domain = np.linspace(-0.5, 0.5, ngx, endpoint=False)
+  xcorrector = grid_corrector(domain, alpha, beta, mu)
+  padxl = (ngx - nx) // 2
+  padxr = ngx - nx - padxl
+  slcx = slice(padxl, -padxr)
+  # ngy = int(sigma * ny)
+  ngy = good_size(int(sigma * ny))
+  while ngy % 2:
+    ngy = good_size(ngy + 1)
+  domain = np.linspace(-0.5, 0.5, ngy, endpoint=False)
+  ycorrector = grid_corrector(domain, alpha, beta, mu)
+  padyl = (ngy - ny) // 2
+  padyr = ngy - ny - padyl
+  slcy = slice(padyl, -padyr)
+
+  # xy taper
+  corrector = xcorrector[slcx, None] * ycorrector[None, slcy]
+
+  # get number of w grids
+  wmax = np.abs(uvw[:, :, 2].ravel() * freq.max() / LIGHTSPEED).max()
+  wmin = np.abs(uvw[:, :, 2].ravel() * freq.min() / LIGHTSPEED).min()
+  x, y = np.meshgrid(*[-ss / 2 + np.arange(ss) for ss in (nx, ny)], indexing="ij")
+  x *= cellx
+  y *= celly
+  eps = x**2 + y**2
+  nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
+  # removing the factor of a half compared to expression in the
+  # paper gives the same w parameters as reported by the wgridder
+  # but I can't seem to get that to agree with the DFT
+  dw = 1.0 / (2 * sigma * np.abs(nm1).max())
+  nw = int(np.ceil((wmax - wmin) / dw)) + alpha
+  w0 = (wmin + wmax) / 2 - dw * (nw - 1) / 2
+  wcorrector = grid_corrector(nm1 * dw, alpha, beta, mu) * (nm1 + 1)
+
+  # this should be compiled in the overload
+  vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
+
+  grid = wgrid_data(
+    uvw,
+    freq,
+    data,
+    weight,
+    flag,
+    jones,
+    ant1,
+    ant2,
+    ngx,
+    ngy,
+    cellx,
+    celly,
+    nc,
+    vis_func,
+    wgt_func,
+    w0,
+    dw,
+    nw,
+    alpha=alpha,
+    beta=beta,
+    mu=mu,
+    usign=usign,
+    vsign=vsign,
   )
-  return _impl
+  # the *ngx*ngy corrects for the FFT normalisation
+  dirty = np.fft.ifft2(grid, axes=(-2, -1)) * ngx * ngy
+  dirty = fftshift(dirty)[:, :, slcx, slcy]
 
-
-def stokes_funcs(data, jones, product, pol, nc):
-  # set up symbolic expressions
-  gp00, gp10, gp01, gp11 = sm.symbols("gp00 gp10 gp01 gp11", real=False)
-  gq00, gq10, gq01, gq11 = sm.symbols("gq00 gq10 gq01 gq11", real=False)
-  w0, w1, w2, w3 = sm.symbols("W0 W1 W2 W3", real=True)
-  v00, v10, v01, v11 = sm.symbols("v00 v10 v01 v11", real=False)
-
-  # Jones matrices
-  Gp = sm.Matrix([[gp00, gp01], [gp10, gp11]])
-  Gq = sm.Matrix([[gq00, gq01], [gq10, gq11]])
-
-  # Mueller matrix (row major form)
-  Mpq = TensorProduct(Gp, Gq.conjugate())
-  Mpqinv = TensorProduct(Gp.inv(), Gq.conjugate().inv())
-
-  # inverse noise covariance
-  Sinv = sm.Matrix([[w0, 0, 0, 0], [0, w1, 0, 0], [0, 0, w2, 0], [0, 0, 0, w3]])
-  S = Sinv.inv()
-
-  # visibilities
-  Vpq = sm.Matrix([[v00], [v01], [v10], [v11]])
-
-  # Full Stokes to corr operator
-  # Is this the only difference between linear and circular pol?
-  # What about paralactic angle rotation?
-  if pol.literal_value == "linear":
-    T = sm.Matrix(
-      [[1.0, 1.0, 0, 0], [0, 0, 1.0, 1.0j], [0, 0, 1.0, -1.0j], [1.0, -1.0, 0, 0]]
-    )
-  elif pol.literal_value == "circular":
-    T = sm.Matrix(
-      [[1.0, 0, 0, 1.0], [0, 1.0, 1.0j, 0], [0, 1.0, -1.0j, 0], [1.0, 0, 0, -1.0]]
-    )
-  Tinv = T.inv()
-
-  # Full Stokes weights
-  W = T.H * Mpq.H * Sinv * Mpq * T
-  Winv = Tinv * Mpqinv * S * Mpqinv.H * Tinv.H
-
-  # Full Stokes coherencies
-  C = Winv * (T.H * (Mpq.H * (Sinv * Vpq)))
-  # Only keep diagonal of weights
-  W = W.diagonal().T  # diagonal() returns row vector
-
-  if product.literal_value == "I":
-    i = (0,)
-  elif product.literal_value == "Q":
-    i = (1,)
-  elif product.literal_value == "U":
-    i = (2,)
-  elif product.literal_value == "V":
-    i = (3,)
-  elif product.literal_value == "DS":
-    if pol.literal_value == "linear":
-      i = (0, 1)
-    elif pol.literal_value == "circular":
-      i = (0, -1)
-  elif product.literal_value == "FS":
-    if nc.literal_value == "2":
-      if pol.literal_value == "linear":
-        i = (0, 1)
-      elif pol.literal_value == "circular":
-        i = (0, -1)
-    elif nc.literal_value == "4":
-      i = (0, 1, 2, 3)
-  else:
-    raise ValueError(f"Unknown polarisation product {product}")
-
-  if jones.ndim == 6:  # Full mode
-    Wsymb = lambdify(
-      (gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11, w0, w1, w2, w3),
-      sm.simplify(W[i, 0]),
-    )
-    Wjfn = njit(nogil=True, inline="always")(Wsymb)
-
-    Dsymb = lambdify(
-      (
-        gp00,
-        gp01,
-        gp10,
-        gp11,
-        gq00,
-        gq01,
-        gq10,
-        gq11,
-        w0,
-        w1,
-        w2,
-        w3,
-        v00,
-        v01,
-        v10,
-        v11,
-      ),
-      sm.simplify(C[i, 0]),
-    )
-    Djfn = njit(nogil=True, inline="always")(Dsymb)
-
-    @njit(nogil=True, inline="always")
-    def wfunc(gp, gq, W):
-      gp00 = gp[0, 0]
-      gp01 = gp[0, 1]
-      gp10 = gp[1, 0]
-      gp11 = gp[1, 1]
-      gq00 = gq[0, 0]
-      gq01 = gq[0, 1]
-      gq10 = gq[1, 0]
-      gq11 = gq[1, 1]
-      W00 = W[0]
-      W01 = W[1]
-      W10 = W[2]
-      W11 = W[3]
-      return Wjfn(
-        gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11, W00, W01, W10, W11
-      ).real.ravel()
-
-    @njit(nogil=True, inline="always")
-    def vfunc(gp, gq, W, V):
-      gp00 = gp[0, 0]
-      gp01 = gp[0, 1]
-      gp10 = gp[1, 0]
-      gp11 = gp[1, 1]
-      gq00 = gq[0, 0]
-      gq01 = gq[0, 1]
-      gq10 = gq[1, 0]
-      gq11 = gq[1, 1]
-      W00 = W[0]
-      W01 = W[1]
-      W10 = W[2]
-      W11 = W[3]
-      V00 = V[0]
-      V01 = V[1]
-      V10 = V[2]
-      V11 = V[3]
-      return Djfn(
-        gp00,
-        gp01,
-        gp10,
-        gp11,
-        gq00,
-        gq01,
-        gq10,
-        gq11,
-        W00,
-        W01,
-        W10,
-        W11,
-        V00,
-        V01,
-        V10,
-        V11,
-      ).ravel()
-
-  elif jones.ndim == 5:  # DIAG mode
-    W = W.subs(gp10, 0)
-    W = W.subs(gp01, 0)
-    W = W.subs(gq10, 0)
-    W = W.subs(gq01, 0)
-    C = C.subs(gp10, 0)
-    C = C.subs(gp01, 0)
-    C = C.subs(gq10, 0)
-    C = C.subs(gq01, 0)
-
-    Wsymb = lambdify((gp00, gp11, gq00, gq11, w0, w1, w2, w3), sm.simplify(W[i, 0]))
-    Wjfn = njit(nogil=True, inline="always")(Wsymb)
-
-    Dsymb = lambdify(
-      (gp00, gp11, gq00, gq11, w0, w1, w2, w3, v00, v01, v10, v11),
-      sm.simplify(C[i, 0]),
-    )
-    Djfn = njit(nogil=True, inline="always")(Dsymb)
-
-    if nc.literal_value == "4":
-
-      @njit(nogil=True, inline="always")
-      def wfunc(gp, gq, W):
-        gp00 = gp[0]
-        gp11 = gp[1]
-        gq00 = gq[0]
-        gq11 = gq[1]
-        W00 = W[0]
-        W01 = W[1]
-        W10 = W[2]
-        W11 = W[3]
-        return Wjfn(gp00, gp11, gq00, gq11, W00, W01, W10, W11).real.ravel()
-
-      @njit(nogil=True, inline="always")
-      def vfunc(gp, gq, W, V):
-        gp00 = gp[0]
-        gp11 = gp[1]
-        gq00 = gq[0]
-        gq11 = gq[1]
-        W00 = W[0]
-        W01 = W[1]
-        W10 = W[2]
-        W11 = W[3]
-        V00 = V[0]
-        V01 = V[1]
-        V10 = V[2]
-        V11 = V[3]
-        return Djfn(
-          gp00, gp11, gq00, gq11, W00, W01, W10, W11, V00, V01, V10, V11
-        ).ravel()
-    elif nc.literal_value == "2":
-
-      @njit(nogil=True, inline="always")
-      def wfunc(gp, gq, W):
-        gp00 = gp[0]
-        gp11 = gp[1]
-        gq00 = gq[0]
-        gq11 = gq[1]
-        W00 = W[0]
-        W01 = 1.0
-        W10 = 1.0
-        W11 = W[-1]
-        return Wjfn(gp00, gp11, gq00, gq11, W00, W01, W10, W11).real.ravel()
-
-      @njit(nogil=True, inline="always")
-      def vfunc(gp, gq, W, V):
-        gp00 = gp[0]
-        gp11 = gp[1]
-        gq00 = gq[0]
-        gq11 = gq[1]
-        W00 = W[0]
-        W01 = 1.0
-        W10 = 1.0
-        W11 = W[-1]
-        V00 = V[0]
-        V01 = 0j
-        V10 = 0j
-        V11 = V[-1]
-        return Djfn(
-          gp00, gp11, gq00, gq11, W00, W01, W10, W11, V00, V01, V10, V11
-        ).ravel()
-    else:
-      raise ValueError(
-        f"Selected product is only available from 2 or 4"
-        f"correlation data while you have ncorr={nc}."
-      )
-
-  else:
-    raise ValueError("Jones term has incorrect number of dimensions")
-
-  return vfunc, wfunc
+  # w-screens
+  wgrid = w0 + np.arange(nw) * dw
+  wscreens = np.exp(-2j * np.pi * nm1[None, :, :] * wgrid[:, None, None]).astype(
+    data.dtype
+  )
+  dirty = dirty * wscreens[None, :, :, :]
+  # sum over w axis
+  dirty = dirty.real.sum(axis=1)
+  # xy tapers
+  dirty /= corrector[None, :, :]
+  # w-taper * n
+  dirty /= wcorrector[None, :, :]
+  return dirty
