@@ -99,9 +99,6 @@ def test_tapers(ms_name):
 
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
   dt_ms = dt[dt.groups[1]]
-  vis = dt_ms.VISIBILITY.values
-  vis[:, :, :, 0] = 1.0
-  vis[:, :, :, -1] = 1.0
   freq = dt_ms.frequency.values
   uvw = dt_ms.UVW.values
 
