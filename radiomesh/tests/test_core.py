@@ -261,7 +261,7 @@ def test_tapers(ms_name):
     assert_array_almost_equal(1 + diff, 1.0, decimal=7)
 
 
-@pmfw("ignore::ImputedMetadatawarning")
+@pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_grid_data(fov, precision, ms_name):
@@ -350,7 +350,7 @@ def test_grid_data(fov, precision, ms_name):
   assert_array_almost_equal(1 + diff, 1.0, decimal=6)
 
 
-@pmfw("ignore::ImputedMetadatawarning")
+@pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_wgrid_data(fov, precision, ms_name):
