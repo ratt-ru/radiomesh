@@ -4,32 +4,31 @@ from pathlib import Path
 import pytest
 import requests
 
-MS_TAR_NAME = "test_ascii_1h60.0s.MS.tar.gz"
 MS_NAME = "test_ascii_1h60.0s.MS"
+MS_TAR_NAME = f"{MS_NAME}.tar.gz"
 
 # https://drive.google.com/file/d/1rfGXGjjJ2XtF26LImlyJzCJMCNQZgEFT/view?usp=sharing
 
 gdrive_id = "1rfGXGjjJ2XtF26LImlyJzCJMCNQZgEFT"
+url = f"https://drive.google.com/uc?id={gdrive_id}"
 
-url = "https://drive.google.com/uc?id={id}".format(id=gdrive_id)
 
-
-def download_test_ms(path):
+def download_test_ms(path: Path) -> Path:
   ms_path = path / MS_NAME
 
-  if ms_path.exists():
-    return ms_path
+  # Download and untar if the ms doesn't exist
+  if not ms_path.exists():
+    ms_tar_path = path / MS_TAR_NAME
 
-  ms_tar_path = path / MS_TAR_NAME
+    download = requests.get(url)
+    with open(ms_tar_path, "wb") as f:
+      f.write(download.content)
 
-  download = requests.get(url)
-  with open(ms_tar_path, "wb") as f:
-    f.write(download.content)
+    with tarfile.open(ms_tar_path, "r:gz") as tar:
+      tar.extractall(path=path)
 
-  with tarfile.open(ms_tar_path, "r:gz") as tar:
-    tar.extractall(path=path)
+    ms_tar_path.unlink()
 
-  ms_tar_path.unlink()
   return ms_path
 
 
