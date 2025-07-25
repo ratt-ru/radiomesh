@@ -68,6 +68,8 @@ def explicit_gridder(
           vis = np.conjugate(vis)
         phase = freq[chan] / LIGHTSPEED * (x * u + y * v - w * nm1)
         cphase = np.exp(2j * np.pi * phase)
+        # this should accumulate onto each corr separately
+        # since there are 4 threads and ncorr=4
         for corr in range(ncorr):
           res[corr] += (vis[corr] * wgt[corr] * cphase).real
   return res / n
@@ -159,7 +161,7 @@ def test_tapers(ms_name):
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_grid_data(fov, precision, ms_name):
-  np.random.seed(420)
+  rng = np.random.default_rng(seed=42)
   if precision == "single":
     complex_type = np.complex64
   else:
@@ -168,18 +170,21 @@ def test_grid_data(fov, precision, ms_name):
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
   dt_ms = dt[dt.groups[1]]
   dt_ant = dt[dt.groups[2]]
-  vis = dt_ms.VISIBILITY.values
-  vis[:, :, :, 0] = 1.0
-  vis[:, :, :, -1] = 1.0
+  vis_shape = dt_ms.VISIBILITY.shape
+  vis = rng.normal(size=vis_shape) + 1.0j * rng.normal(size=vis_shape)
   wgt = dt_ms.WEIGHT.values
   flag = dt_ms.FLAG.values
   freq = dt_ms.frequency.values
   uvw = dt_ms.UVW.values
   ntime, nbl, nchan, ncorr = vis.shape
   nant = dt_ant.antenna_name.size
-  jones = np.zeros((ntime, nant, nchan, 1, 2, 2), dtype=complex_type)
+  # each 2x2 matrix needs to be invertible so we make
+  # the diagonals much larger than the off diagonals
+  jones_shape = (ntime, nant, nchan, 1, 2, 2)
+  jones = np.zeros(jones_shape, dtype=complex_type)
   jones[:, :, :, :, 0, 0] = 1.0
   jones[:, :, :, :, 1, 1] = 1.0
+  jones += 0.05 * (rng.normal(size=jones_shape) + 1.0j * rng.normal(size=jones_shape))
   _, ant1 = np.unique(dt_ms.baseline_antenna1_name.values, return_inverse=True)
   _, ant2 = np.unique(dt_ms.baseline_antenna2_name.values, return_inverse=True)
   pols = dt_ms.polarization.values
@@ -244,29 +249,30 @@ def test_grid_data(fov, precision, ms_name):
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_wgrid_data(fov, precision, ms_name):
-  np.random.seed(420)
+  rng = np.random.default_rng(seed=42)
   if precision == "single":
-    # real_type = "f4"
-    complex_type = "c8"
+    complex_type = np.complex64
   else:
-    # real_type = "f8"
-    complex_type = "c16"
+    complex_type = np.complex128
 
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
   dt_ms = dt[dt.groups[1]]
   dt_ant = dt[dt.groups[2]]
-  vis = dt_ms.VISIBILITY.values
-  vis[:, :, :, 0] = 1.0
-  vis[:, :, :, -1] = 1.0
+  vis_shape = dt_ms.VISIBILITY.shape
+  vis = rng.normal(size=vis_shape) + 1.0j * rng.normal(size=vis_shape)
   wgt = dt_ms.WEIGHT.values
   flag = dt_ms.FLAG.values
   freq = dt_ms.frequency.values
   uvw = dt_ms.UVW.values
   ntime, nbl, nchan, ncorr = vis.shape
   nant = dt_ant.antenna_name.size
-  jones = np.zeros((ntime, nant, nchan, 1, 2, 2), dtype=complex_type)
+  # each 2x2 matrix needs to be invertible so we make
+  # the diagonals much larger than the off diagonals
+  jones_shape = (ntime, nant, nchan, 1, 2, 2)
+  jones = np.zeros(jones_shape, dtype=complex_type)
   jones[:, :, :, :, 0, 0] = 1.0
   jones[:, :, :, :, 1, 1] = 1.0
+  jones += 0.05 * (rng.normal(size=jones_shape) + 1.0j * rng.normal(size=jones_shape))
   _, ant1 = np.unique(dt_ms.baseline_antenna1_name.values, return_inverse=True)
   _, ant2 = np.unique(dt_ms.baseline_antenna2_name.values, return_inverse=True)
   pols = dt_ms.polarization.values
@@ -286,7 +292,9 @@ def test_wgrid_data(fov, precision, ms_name):
   if nx % 2:
     nx += 1
   ny = nx
+  from time import time
 
+  ti = time()
   dirty_dft = explicit_gridder(
     uvw,
     freq,
@@ -304,7 +312,8 @@ def test_wgrid_data(fov, precision, ms_name):
     vis_func,
     wgt_func,
   )
-
+  print("dft - ", time() - ti)
+  ti = time()
   dirty = vis2im_wgrid(
     uvw,
     freq,
@@ -322,7 +331,7 @@ def test_wgrid_data(fov, precision, ms_name):
     product,
     ncorr,
   )
-
+  print("wgrid - ", time() - ti)
   # we compare fractional differences because abs values can be very large
   diff = (dirty - dirty_dft) / dirty_dft.max()
   assert_array_almost_equal(1 + diff, 1.0, decimal=6)

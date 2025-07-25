@@ -9,13 +9,13 @@ from numba import njit
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.stokes import stokes_funcs
 
-Fs = partial(np.fft.fftshift, axes=(-2, -1))
-iFs = partial(np.fft.ifftshift, axes=(-2, -1))
+fftshift = partial(np.fft.fftshift, axes=(-2, -1))
+ifftshift = partial(np.fft.ifftshift, axes=(-2, -1))
 
 JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": False}
 
 
-def grid_corrector(dom, alpha, beta, mu):
+def grid_corrector(domain, alpha, beta, mu):
   """
   Use Gauss-Legendre quadrature to compute the grid corrector (taper).
   """
@@ -27,13 +27,13 @@ def grid_corrector(dom, alpha, beta, mu):
   idx = q > 0
   q = q[idx]
   wgt = wgt[idx]
-  shape = np.shape(dom)
+  shape = np.shape(domain)
   xkern = np.zeros(q.size)
   _es_kernel(q, xkern, alpha * beta, mu)
   if len(shape) > 1:
-    z = np.einsum("ij,k->ijk", dom, q)
+    z = np.einsum("ij,k->ijk", domain, q)
   else:
-    z = np.outer(dom, q)
+    z = np.outer(domain, q)
   # note the ndim dependent broadcast
   tmp = alpha * np.sum(np.cos(np.pi * alpha * z) * xkern * wgt, axis=-1)
   return np.reshape(tmp, shape)
@@ -82,17 +82,14 @@ def grid_data(
   ngy: int,
   cellx: float,
   celly: float,
-  pol: str,
-  product: str,
   nc: int,
   vis_func: Callable,
   wgt_func: Callable,
-  sigma: float =2.0,
-  alpha: float =10,
-  beta: float =2.3,
-  mu: float =0.5,
-  usign: float =1,
-  vsign: float =-1,
+  alpha: float = 10,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = -1,
 ):
   ntime, nbl, nchan, ncorr = data.shape
   vis_grid = np.zeros((nc, ngx, ngy), dtype=data.dtype)
@@ -166,10 +163,12 @@ def vis2im(
   pol: str,
   product: str,
   nc: int,
-  sigma: float =2.0,
-  alpha: float =10,
-  beta: float =2.3,
-  mu: float =0.5,
+  sigma: float = 2.0,
+  alpha: float = 10,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = 1,
 ):
   ngx = good_size(int(sigma * nx))
   # make sure it is even and a good size for the FFT
@@ -207,22 +206,19 @@ def vis2im(
     ngy,
     cellx,
     celly,
-    pol,
-    product,
     nc,
     vis_func,
     wgt_func,
-    sigma: float =2.0,
-    alpha: float =10,
-    beta: float =2.3,
-    mu: float =0.5,
-    usign: float =1,
-    vsign: float =1,
+    alpha=alpha,
+    beta=beta,
+    mu=mu,
+    usign=usign,
+    vsign=vsign,
   )
 
   # the *ngx*ngy corrects for the FFT normalisation
   dirty = np.fft.ifft2(grid, axes=(-2, -1)) * ngx * ngy
-  dirty = Fs(dirty.real)[:, slcx, slcy]
+  dirty = fftshift(dirty.real)[:, slcx, slcy]
   # apply taper
   dirty /= corrector
   return dirty
@@ -242,21 +238,17 @@ def wgrid_data(
   ngy: int,
   cellx: float,
   celly: float,
-  pol: str,
-  product: str,
   nc: int,
   vis_func: Callable,
   wgt_func: Callable,
   w0: float,
   dw: float,
   nw: int,
-  sigma: float =2.0,
-  alpha: float =5,
-  beta: float =2.3,
-  mu: float =0.5,
-  usign: float =1,
-  vsign: float =1,
-  wsign=-1,
+  alpha: float = 5,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = 1,
 ):
   ntime, nbl, nchan, ncorr = data.shape
   # create a grid per wplane
@@ -352,10 +344,12 @@ def vis2im_wgrid(
   pol: str,
   product: str,
   nc: int,
-  sigma: float =2,
-  alpha: float =10,
-  beta: float =2.3,
-  mu: float =0.5,
+  sigma: float = 2,
+  alpha: float = 10,
+  beta: float = 2.3,
+  mu: float = 0.5,
+  usign: float = 1,
+  vsign: float = 1,
 ):
   # ngx = int(sigma * nx)
   ngx = good_size(int(sigma * nx))
@@ -412,25 +406,21 @@ def vis2im_wgrid(
     ngy,
     cellx,
     celly,
-    pol,
-    product,
     nc,
     vis_func,
     wgt_func,
     w0,
     dw,
     nw,
-    sigma=sigma,
     alpha=alpha,
     beta=beta,
     mu=mu,
-    usign=1,
-    vsign=1,
-    wsign=-1,
+    usign=usign,
+    vsign=vsign,
   )
   # the *ngx*ngy corrects for the FFT normalisation
   dirty = np.fft.ifft2(grid, axes=(-2, -1)) * ngx * ngy
-  dirty = Fs(dirty)[:, :, slcx, slcy]
+  dirty = fftshift(dirty)[:, :, slcx, slcy]
 
   # w-screens
   wgrid = w0 + np.arange(nw) * dw
