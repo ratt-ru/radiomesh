@@ -87,12 +87,12 @@ def grid_data(
   nc: int,
   vis_func: Callable,
   wgt_func: Callable,
-  sigma=2.0,
-  alpha=10,
-  beta=2.3,
-  mu=0.5,
-  usign=1,
-  vsign=-1,
+  sigma: float =2.0,
+  alpha: float =10,
+  beta: float =2.3,
+  mu: float =0.5,
+  usign: float =1,
+  vsign: float =-1,
 ):
   ntime, nbl, nchan, ncorr = data.shape
   vis_grid = np.zeros((nc, ngx, ngy), dtype=data.dtype)
