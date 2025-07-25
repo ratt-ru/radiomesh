@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Overload explicit_gridder to allow execution in jitted numba code (:pr:`35`)
 * Remove comment describing threads from a previous attempt at parallelisation of explicit_gridde (:pr:`34`)
 * Add full reference gridding and wgridding implementations (:pr:`32`)
 * Remove 0.5 offset from the ES kernel evaluation (:pr:`31`)

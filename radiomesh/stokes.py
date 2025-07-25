@@ -1,10 +1,14 @@
+from typing import Callable, Tuple
+
 import sympy as sm
 from numba import njit
 from sympy.physics.quantum import TensorProduct
 from sympy.utilities.lambdify import lambdify
 
 
-def stokes_funcs(jones, product, pol, nc):
+def stokes_funcs(
+  jones_ndim: int, product: str, pol: str, nc: int
+) -> Tuple[Callable, Callable]:
   # set up symbolic expressions
   gp00, gp10, gp01, gp11 = sm.symbols("gp00 gp10 gp01 gp11", real=False)
   gq00, gq10, gq01, gq11 = sm.symbols("gq00 gq10 gq01 gq11", real=False)
@@ -39,7 +43,7 @@ def stokes_funcs(jones, product, pol, nc):
       [[1.0, 0, 0, 1.0], [0, 1.0, 1.0j, 0], [0, 1.0, -1.0j, 0], [1.0, 0, 0, -1.0]]
     )
   else:
-    print("pol = ", pol)
+    raise ValueError(f"pol ({pol}) should be linear or circular")
 
   Tinv = T.inv()
 
@@ -54,7 +58,7 @@ def stokes_funcs(jones, product, pol, nc):
 
   # this should ensure that outputs are always ordered as
   # [I, Q, U, V]
-  i = ()
+  i: Tuple[int, ...] = ()
   if "I" in product:
     i += (0,)
 
@@ -83,7 +87,7 @@ def stokes_funcs(jones, product, pol, nc):
   if len(remprod):
     raise ValueError(f"Unknown polarisation product {remprod}")
 
-  if jones.ndim == 6:  # Full mode
+  if jones_ndim == 6:  # Full mode
     Wsymb = lambdify(
       (gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11, w0, w1, w2, w3),
       sm.simplify(W[i, 0]),
@@ -168,7 +172,7 @@ def stokes_funcs(jones, product, pol, nc):
         V11,
       ).ravel()
 
-  elif jones.ndim == 5:  # DIAG mode
+  elif jones_ndim == 5:  # DIAG mode
     W = W.subs(gp10, 0)
     W = W.subs(gp01, 0)
     W = W.subs(gq10, 0)

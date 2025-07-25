@@ -191,7 +191,7 @@ def vis2im(
   # taper
   corrector = xcorrector[slcx, None] * ycorrector[None, slcy]
 
-  vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
+  vis_func, wgt_func = stokes_funcs(jones.ndim, product, pol, nc)
 
   grid = grid_data(
     uvw,
@@ -391,7 +391,7 @@ def vis2im_wgrid(
   wcorrector = grid_corrector(nm1 * dw, alpha, beta, mu) * (nm1 + 1)
 
   # this should be compiled in the overload
-  vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
+  vis_func, wgt_func = stokes_funcs(jones.ndim, product, pol, nc)
 
   grid = wgrid_data(
     uvw,
