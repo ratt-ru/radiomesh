@@ -1,9 +1,10 @@
-from typing import Callable
-
+import numba
 import numpy as np
-import numpy.typing as npt
 import pytest
 import xarray as xr
+from numba import types
+from numba.core.errors import RequireLiteralValue
+from numba.extending import overload
 from numpy.testing import assert_array_almost_equal
 
 from radiomesh.constants import LIGHTSPEED
@@ -17,62 +18,164 @@ from radiomesh.core import (
 from radiomesh.stokes import stokes_funcs
 
 pmp = pytest.mark.parametrize
+pmfw = pytest.mark.filterwarnings
 
 
-def explicit_gridder(
-  uvw: npt.NDArray,
-  freq: npt.NDArray,
-  data: npt.NDArray,
-  weight: npt.NDArray,
-  flag: npt.NDArray,
-  jones: npt.NDArray,
-  ant1: npt.NDArray,
-  ant2: npt.NDArray,
-  nx: int,
-  ny: int,
-  cellx: float,
-  celly: float,
-  apply_w: bool,
-  vis_func: Callable,
-  wgt_func: Callable,
+def explicit_gridder_impl(
+  uvw,
+  freq,
+  data,
+  weight,
+  flag,
+  jones,
+  ant1,
+  ant2,
+  nx,
+  ny,
+  cellx,
+  celly,
+  apply_w,
+  pol,
+  product,
+  ncorr,
 ):
-  x, y = np.meshgrid(*[-ss / 2 + np.arange(ss) for ss in [nx, ny]], indexing="ij")
-  x *= cellx
-  y *= celly
-  eps = x**2 + y**2
-  if apply_w:
-    nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
-    n = (nm1 + 1)[None, :, :]
-  else:
-    nm1 = 0.0
-    n = 1.0
-  ntime, nbl, nchan, ncorr = data.shape
-  res = np.zeros((ncorr, nx, ny))
-  for t in range(ntime):
-    for bl in range(nbl):
-      p = ant1[bl]
-      q = ant2[bl]
-      gp = jones[t, p]
-      gq = jones[t, q]
-      for chan in range(nchan):
-        if flag[t, bl, chan].any():
-          continue
-        # convert to corrected Stokes vis and weights
-        vis = vis_func(gp[chan, 0], gq[chan, 0], weight[t, bl, chan], data[t, bl, chan])
-        wgt = wgt_func(gp[chan, 0], gq[chan, 0], weight[t, bl, chan])
-        u, v, w = uvw[t, bl]
-        if w < 0:
-          u *= -1
-          v *= -1
-          w *= -1
-          vis = np.conjugate(vis)
-        phase = freq[chan] / LIGHTSPEED * (x * u + y * v - w * nm1)
-        cphase = np.exp(2j * np.pi * phase)
-        # this should accumulate onto each corr separately
-        # since there are 4 threads and ncorr=4
-        for corr in range(ncorr):
-          res[corr] += (vis[corr] * wgt[corr] * cphase).real
-  return res / n
+  raise NotImplementedError
+
+
+@overload(explicit_gridder_impl, jit_options={"nogil": True}, prefer_literal=True)
+def explicit_gridder_overload(
+  uvw,
+  freq,
+  data,
+  weight,
+  flag,
+  jones,
+  ant1,
+  ant2,
+  nx,
+  ny,
+  cellx,
+  celly,
+  apply_w,
+  pol,
+  product,
+  ncorr,
+):
+  if not isinstance(pol, types.StringLiteral):
+    raise RequireLiteralValue(f"pol ({pol}) must be a StringLiteral")
+  if not isinstance(product, types.StringLiteral):
+    raise RequireLiteralValue(f"product ({product}) must be a StringLiteral")
+  if not isinstance(ncorr, types.IntegerLiteral):
+    raise RequireLiteralValue(f"ncorr ({ncorr}) must be a IntegerLiteral")
+
+  POL = pol.literal_value
+  PRODUCT = product.literal_value
+  NCORR = ncorr.literal_value
+
+  vis_func, wgt_func = stokes_funcs(jones.ndim, PRODUCT, POL, NCORR)
+
+  def impl(
+    uvw,
+    freq,
+    data,
+    weight,
+    flag,
+    jones,
+    ant1,
+    ant2,
+    nx,
+    ny,
+    cellx,
+    celly,
+    apply_w,
+    pol,
+    product,
+    ncorr,
+  ):
+    # np.meshgrid(*[np.arange(ss) - ss/2] for ss in [nx,ny], indexing="ij")
+    x = np.empty((nx, ny), np.float64)
+    y = np.empty((nx, ny), np.float64)
+
+    for xi in range(nx):
+      for yi in range(ny):
+        x[xi, yi] = xi - nx / 2
+        y[xi, yi] = yi - ny / 2
+
+    x *= cellx
+    y *= celly
+    eps = x**2 + y**2
+    nm1 = np.zeros_like(eps)
+    if apply_w:
+      nm1[:] = -eps / (np.sqrt(1.0 - eps) + 1.0)
+    ntime, nbl, nchan, ncorr_actual = data.shape
+    # assert ncorr_actual == NCORR
+    res = np.zeros((NCORR, nx, ny))
+    for t in range(ntime):
+      for bl in range(nbl):
+        p = ant1[bl]
+        q = ant2[bl]
+        gp = jones[t, p]
+        gq = jones[t, q]
+        for chan in range(nchan):
+          if flag[t, bl, chan].any():
+            continue
+          # convert to corrected Stokes vis and weights
+          vis = vis_func(
+            gp[chan, 0], gq[chan, 0], weight[t, bl, chan], data[t, bl, chan]
+          )
+          wgt = wgt_func(gp[chan, 0], gq[chan, 0], weight[t, bl, chan])
+          u, v, w = uvw[t, bl]
+          if w < 0.0:
+            u *= -1.0
+            v *= -1.0
+            w *= -1.0
+            vis = np.conjugate(vis)
+          phase = freq[chan] / LIGHTSPEED * (x * u + y * v - w * nm1)
+          cphase = np.exp(2j * np.pi * phase)
+          for corr in range(NCORR):
+            res[corr] += (vis[corr] * wgt[corr] * cphase).real
+    return res / (nm1 + 1.0)[None, :, :]
+
+  return impl
+
+
+@numba.njit(nogil=True)
+def explicit_gridder(
+  uvw,
+  freq,
+  data,
+  weight,
+  flag,
+  jones,
+  ant1,
+  ant2,
+  nx,
+  ny,
+  cellx,
+  celly,
+  apply_w,
+  pol,
+  product,
+  ncorr,
+):
+  return explicit_gridder_impl(
+    uvw,
+    freq,
+    data,
+    weight,
+    flag,
+    jones,
+    ant1,
+    ant2,
+    nx,
+    ny,
+    cellx,
+    celly,
+    apply_w,
+    numba.literally(pol),
+    numba.literally(product),
+    numba.literally(ncorr),
+  )
 
 
 def taper_trapz(domain, alpha=5, beta=2.3, mu=0.5):
@@ -158,6 +261,7 @@ def test_tapers(ms_name):
     assert_array_almost_equal(1 + diff, 1.0, decimal=7)
 
 
+@pmfw("ignore::ImputedMetadatawarning")
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_grid_data(fov, precision, ms_name):
@@ -193,7 +297,6 @@ def test_grid_data(fov, precision, ms_name):
   elif "RR" in pols or "LL" in pols:
     pol = "circular"
   product = "IQUV"
-  vis_func, wgt_func = stokes_funcs(jones, product, pol, ncorr)
 
   # if we don't grid at Nyquist some uv points may fall off the grid
   umax = np.abs(uvw[:, :, 0]).max()
@@ -220,8 +323,9 @@ def test_grid_data(fov, precision, ms_name):
     cell,
     cell,
     False,
-    vis_func,
-    wgt_func,
+    pol,
+    product,
+    vis.shape[-1],
   )
 
   dirty = vis2im(
@@ -246,6 +350,7 @@ def test_grid_data(fov, precision, ms_name):
   assert_array_almost_equal(1 + diff, 1.0, decimal=6)
 
 
+@pmfw("ignore::ImputedMetadatawarning")
 @pmp("fov", (1.0,))
 @pmp("precision", ("single",))
 def test_wgrid_data(fov, precision, ms_name):
@@ -281,7 +386,6 @@ def test_wgrid_data(fov, precision, ms_name):
   elif "RR" in pols or "LL" in pols:
     pol = "circular"
   product = "IQUV"
-  vis_func, wgt_func = stokes_funcs(jones, product, pol, ncorr)
 
   # if we don't grid at Nyquist some uv points may fall off the grid
   umax = np.abs(uvw[:, :, 0]).max()
@@ -309,8 +413,9 @@ def test_wgrid_data(fov, precision, ms_name):
     cell,
     cell,
     True,
-    vis_func,
-    wgt_func,
+    pol,
+    product,
+    vis.shape[-1],
   )
   print("dft - ", time() - ti)
   ti = time()
