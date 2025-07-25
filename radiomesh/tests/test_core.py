@@ -161,8 +161,7 @@ def test_tapers(ms_name):
 def test_grid_data(fov, precision, ms_name):
   np.random.seed(420)
   if precision == "single":
-    # real_type = "f4"
-    complex_type = "c8"
+    complex_type = np.complex64
   else:
     # real_type = "f8"
     complex_type = "c16"
