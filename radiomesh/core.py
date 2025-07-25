@@ -212,12 +212,12 @@ def vis2im(
     nc,
     vis_func,
     wgt_func,
-    sigma=2.0,
-    alpha=10,
-    beta=2.3,
-    mu=0.5,
-    usign=1,
-    vsign=1,
+    sigma: float =2.0,
+    alpha: float =10,
+    beta: float =2.3,
+    mu: float =0.5,
+    usign: float =1,
+    vsign: float =1,
   )
 
   # the *ngx*ngy corrects for the FFT normalisation
