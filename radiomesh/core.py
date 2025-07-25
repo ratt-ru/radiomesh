@@ -352,10 +352,10 @@ def vis2im_wgrid(
   pol: str,
   product: str,
   nc: int,
-  sigma=2,
-  alpha=10,
-  beta=2.3,
-  mu=0.5,
+  sigma: float =2,
+  alpha: float =10,
+  beta: float =2.3,
+  mu: float =0.5,
 ):
   # ngx = int(sigma * nx)
   ngx = good_size(int(sigma * nx))
