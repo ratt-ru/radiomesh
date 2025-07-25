@@ -166,10 +166,10 @@ def vis2im(
   pol: str,
   product: str,
   nc: int,
-  sigma=2.0,
-  alpha=10,
-  beta=2.3,
-  mu=0.5,
+  sigma: float =2.0,
+  alpha: float =10,
+  beta: float =2.3,
+  mu: float =0.5,
 ):
   ngx = good_size(int(sigma * nx))
   # make sure it is even and a good size for the FFT
