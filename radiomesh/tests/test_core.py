@@ -163,8 +163,7 @@ def test_grid_data(fov, precision, ms_name):
   if precision == "single":
     complex_type = np.complex64
   else:
-    # real_type = "f8"
-    complex_type = "c16"
+    complex_type = np.complex128
 
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
   dt_ms = dt[dt.groups[1]]
