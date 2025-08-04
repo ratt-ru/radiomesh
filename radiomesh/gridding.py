@@ -92,7 +92,7 @@ def wgrid_overload(
     (wgrid_params := wgrid_literal_params.datum_value), WGridderParameters
   ):
     raise TypingError(
-      f"'wgrid_literal_params' {wgrid_params} must be a WGridderParameters "
+      f"'wgrid_literal_params' {type(wgrid_params)} must be a WGridderParameters "
     )
 
   try:
