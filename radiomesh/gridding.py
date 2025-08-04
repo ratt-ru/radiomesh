@@ -25,7 +25,7 @@ from radiomesh.utils import wgridder_conventions
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
 
 
-@dataclass(unsafe_hash=True, eq=True)
+@dataclass(slots=True, eq=True, unsafe_hash=True)
 class WGridderParameters:
   nx: int
   ny: int
@@ -33,6 +33,8 @@ class WGridderParameters:
   pixsizey: float
   kernel: ESKernel
   schema: str
+  apply_w: bool = True
+  apply_fftshift: bool = True
 
 
 def parse_schema(schema: str) -> Tuple[str, ...]:
@@ -102,7 +104,12 @@ def wgrid_overload(
       f"{wgrid_params.schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
+  # Currently this implementation only applies an fftshift
+  if not (apply_fftshift := wgrid_params.apply_fftshift):
+    raise NotImplementedError(f"wgrid_params.apply_fftshift={apply_fftshift}")
+
   KERNEL = Datum(wgrid_params.kernel)
+  HALF_SUPPORT_INT = wgrid_params.kernel.half_support
   POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
   STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
   NSTOKES = len(STOKES_SCHEMA_DATUM.value)
@@ -113,10 +120,6 @@ def wgrid_overload(
   NY = wgrid_params.ny
   PIXSIZEX = wgrid_params.pixsizex
   PIXSIZEY = wgrid_params.pixsizey
-  U_CELL = 1.0 / (NX * PIXSIZEX)
-  V_CELL = 1.0 / (NY * PIXSIZEY)
-  U_MAX = 1.0 / PIXSIZEX / 2.0
-  V_MAX = 1.0 / PIXSIZEY / 2.0
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   def impl(
@@ -153,23 +156,26 @@ def wgrid_overload(
           vis = apply_weights(vis, wgt)
           stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
 
-          # Pixel coordinates
-          u_pixel = (U_SIGN * u * wavelengths[ch] + U_MAX) / U_CELL
-          v_pixel = (V_SIGN * v * wavelengths[ch] + V_MAX) / V_CELL
+          # Scaled uv coordinates
+          u_scaled = u * U_SIGN * wavelengths[ch] * PIXSIZEX
+          v_scaled = v * V_SIGN * wavelengths[ch] * PIXSIZEY
 
-          # Indices
-          u_index = int(np.round(u_pixel))
-          v_index = int(np.round(v_pixel))
+          # UV coordinates on the FFT shifted grid
+          u_grid = (u_scaled * NX) % NX
+          v_grid = (v_scaled * NY) % NY
 
-          # Tuples of indices of length kernel.support
-          # centred on {u,v}_index
-          x_indices = es_kernel_positions(KERNEL, u_index)
-          y_indices = es_kernel_positions(KERNEL, v_index)
+          # Pixel indices at the start of the kernel
+          u_pixel_start = int(np.round(u_grid)) - HALF_SUPPORT_INT
+          v_pixel_start = int(np.round(v_grid)) - HALF_SUPPORT_INT
+
+          # Tuple of indices in X and Y associated with each kernel value
+          # Of length kernel.support
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
 
           # Tuples of kernel values of length kernel.support
-          # generated from (index - pixel)
-          x_kernel = eval_es_kernel(KERNEL, x_indices, u_pixel)
-          y_kernel = eval_es_kernel(KERNEL, y_indices, v_pixel)
+          x_kernel = eval_es_kernel(KERNEL, x_indices, u_grid, u_pixel_start)
+          y_kernel = eval_es_kernel(KERNEL, y_indices, v_grid, v_pixel_start)
 
           for xfi, xk in zip(
             numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
