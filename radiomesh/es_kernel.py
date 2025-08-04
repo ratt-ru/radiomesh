@@ -62,7 +62,7 @@ def es_kernel_positions(
       ir_offset = ir.Constant(llvm_offset_type, so)
       fftshift_grid_index = context.compile_internal(
         builder,
-        lambda gi, o: (gi + o) % N,
+        lambda ps, o: (ps + o) % N,
         offset_type(pixel_start_type, offset_type),
         [pixel_start, ir_offset],
       )
@@ -78,15 +78,14 @@ def es_kernel_positions(
 def eval_es_kernel(
   typingctx,
   kernel_literal: DatumLiteral[ESKernel],
-  kernel_pos: types.UniTuple,
   grid: types.Float,
   pixel_start: types.Integer,
 ) -> Tuple[Signature, Callable]:
-  """Evaluates the es kernel at :code:`(pos - grid + 0.5) / half_support`
+  """Evaluates the es kernel at
+  :code:`(range(kernel.support) + pixel_start - grid) / half_support`
 
   Args:
     kernel: ES Kernel object
-    pos: Kernel evaluation coordinate
     grid: UV grid coordinate
     pixel_start: u/v pixel coordinate at the start of the kernel
 
@@ -96,11 +95,6 @@ def eval_es_kernel(
   if not isinstance(kernel_literal, DatumLiteral):
     raise RequireLiteralValue(f"'kernel' {kernel_literal} must be a DatumLiteral")
 
-  if not isinstance(kernel_pos, types.UniTuple) or not isinstance(
-    kernel_pos.dtype, types.Integer
-  ):
-    raise TypingError(f"'x' ({kernel_pos}) must be a tuple of integers")
-
   if not isinstance(grid, types.Float):
     raise TypingError(f"'grid' ({grid}) must be a float")
 
@@ -109,43 +103,47 @@ def eval_es_kernel(
 
   kernel = kernel_literal.datum_value
 
+  SUPPORT = kernel.support
   HALF_SUPPORT = kernel.half_support
   BETAK = kernel.support * kernel.beta
   MU = kernel.mu
 
   if MU == 0.5:
     # Use the faster sqrt function
-    def kernel_fn(kernel_pos: int, grid: float, pixel_start: int) -> float:
-      x = (kernel_pos + pixel_start - grid) / HALF_SUPPORT
+    def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
+      x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
       value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
       # Above is only defined for [-1.0, 1.0]
       # Zero after possible vectorisation (SIMD) of the above expression
       return value if -1.0 <= x <= 1.0 else 0.0
   else:
 
-    def kernel_fn(kernel_pos: int, grid: float, pixel_start: int) -> float:
-      x = (kernel_pos + pixel_start - grid) / HALF_SUPPORT
+    def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
+      x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
       value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
       # Above is only defined for [-1.0, 1.0]
       # Zero after possible vectorisation (SIMD) of the above expression
       return value if -1.0 <= x <= 1.0 else 0.0
 
   return_type = types.Tuple([types.float64] * kernel.support)
-  sig = return_type(kernel_literal, kernel_pos, grid, pixel_start)
+  sig = return_type(kernel_literal, grid, pixel_start)
 
   def codegen(context, builder, signature, args):
-    _, pos, grid, pixel = args
-    _, pos_type, grid_type, pixel_type = signature.args
+    _, grid, pixel_start = args
+    _, grid_type, pixel_start_type = signature.args
     llvm_ret_type = context.get_value_type(signature.return_type)
+    llvm_pixel_type = context.get_value_type(pixel_start_type)
     kernel_tuple = cgutils.get_null_value(llvm_ret_type)
-    kernel_sig = signature.return_type.dtype(pos_type.dtype, grid_type, pixel_type)
+    kernel_sig = signature.return_type.dtype(
+      pixel_start_type, grid_type, pixel_start_type
+    )
 
-    for i in range(len(pos_type)):
-      x = builder.extract_value(pos, i)
-      ktuple = context.compile_internal(
-        builder, kernel_fn, kernel_sig, [x, grid, pixel]
+    for so in range(SUPPORT):
+      ir_offset = ir.Constant(llvm_pixel_type, so)
+      kernel_value = context.compile_internal(
+        builder, kernel_fn, kernel_sig, [ir_offset, grid, pixel_start]
       )
-      kernel_tuple = builder.insert_value(kernel_tuple, ktuple, i)
+      kernel_tuple = builder.insert_value(kernel_tuple, kernel_value, so)
 
     return kernel_tuple
 

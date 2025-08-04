@@ -174,8 +174,8 @@ def wgrid_overload(
           y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
 
           # Tuples of kernel values of length kernel.support
-          x_kernel = eval_es_kernel(KERNEL, x_indices, u_grid, u_pixel_start)
-          y_kernel = eval_es_kernel(KERNEL, y_indices, v_grid, v_pixel_start)
+          x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
+          y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
           for xfi, xk in zip(
             numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
