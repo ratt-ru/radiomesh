@@ -21,7 +21,9 @@ def es_kernel_positions(
   grid_size: types.IntegerLiteral,
   pixel_start: types.Integer,
 ) -> Tuple[Signature, Callable]:
-  """Return a tuple of kernel :code:`offsets +  float(index)` positions.
+  """Return a tuple of kernel
+  :code:`(pixel_start + range(kernel.support)) % grid_size`
+  positions.
 
   Args:
     kernel_literal: ES kernel object
@@ -38,7 +40,7 @@ def es_kernel_positions(
     raise RequireLiteralValue(f"'grid_size' {grid_size} must be an IntegerLiteral")
 
   if not isinstance(pixel_start, types.Integer):
-    raise TypingError(f"'index' ({pixel_start}) must be an integer")
+    raise TypingError(f"'pixel_start' ({pixel_start}) must be an integer")
 
   kernel = kernel_literal.datum_value
   SUPPORT = kernel.support

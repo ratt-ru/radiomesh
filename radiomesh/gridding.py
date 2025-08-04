@@ -109,7 +109,7 @@ def wgrid_overload(
     raise NotImplementedError(f"wgrid_params.apply_fftshift={apply_fftshift}")
 
   KERNEL = Datum(wgrid_params.kernel)
-  HALF_SUPPORT_INT = wgrid_params.kernel.half_support
+  HALF_SUPPORT_INT = wgrid_params.kernel.half_support_int
   POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
   STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
   NSTOKES = len(STOKES_SCHEMA_DATUM.value)
@@ -168,7 +168,7 @@ def wgrid_overload(
           u_pixel_start = int(np.round(u_grid)) - HALF_SUPPORT_INT
           v_pixel_start = int(np.round(v_grid)) - HALF_SUPPORT_INT
 
-          # Tuple of indices in X and Y associated with each kernel value
+          # Tuple of indices associated with each kernel value in X and Y
           # Of length kernel.support
           x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start)
           y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
