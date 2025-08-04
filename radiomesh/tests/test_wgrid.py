@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.gridding import wgrid
+from radiomesh.es_kernel import ESKernel
+from radiomesh.gridding import WGridderParameters, wgrid
+from radiomesh.literals import Datum
 from radiomesh.utils import image_params
 
 
@@ -10,7 +12,7 @@ from radiomesh.utils import image_params
 @pytest.mark.parametrize("ny", [1024])
 @pytest.mark.parametrize("fov", [1.0])
 @pytest.mark.parametrize("oversampling", [2.0])
-def test_wgrid(nx, ny, fov, oversampling):
+def test_numba_wgrid(nx, ny, fov, oversampling):
   """Smoke test. Call with NUMBA_DEBUG_CACHE=1 to ensure caching works"""
   rng = np.random.default_rng(42)
 
@@ -32,19 +34,12 @@ def test_wgrid(nx, ny, fov, oversampling):
   # Now recompute these params
   nx, ny, pixsizex, pixsizey = image_params(uvw, freqs, fov, oversampling)
 
-  vis_grid, weight_grid = wgrid(
-    uvw,
-    vis,
-    weights,
-    flags,
-    freqs,
-    nx,
-    ny,
-    str(pixsizex),
-    str(pixsizey),
-    epsilon=str(2e-13),
-    schema="[XX,XY,YX,YY] -> [I,Q,U,V]",
+  wgrid_params = WGridderParameters(
+    nx, ny, pixsizex, pixsizey, ESKernel(2e-13), schema="[XX,XY,YX,YY] -> [I,Q,U,V]"
   )
+
+  vis_grid, weight_grid = wgrid(uvw, vis, weights, flags, freqs, Datum(wgrid_params))
+
   assert vis_grid.shape == (4, nx, ny)
   assert weight_grid.shape == (nx, ny)
   assert vis_grid.dtype == vis.real.dtype

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from functools import reduce
 from typing import Tuple
 
@@ -5,7 +6,7 @@ import numba
 import numpy as np
 import numpy.typing as npt
 from numba.core import types
-from numba.core.errors import RequireLiteralValue
+from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import overload
 
 from radiomesh.constants import LIGHTSPEED
@@ -18,10 +19,20 @@ from radiomesh.intrinsics import (
   load_data,
   pol_to_stokes,
 )
-from radiomesh.literals import Datum
+from radiomesh.literals import Datum, DatumLiteral
 from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
+
+
+@dataclass(unsafe_hash=True, eq=True)
+class WGridderParameters:
+  nx: int
+  ny: int
+  pixsizex: float
+  pixsizey: float
+  kernel: ESKernel
+  schema: str
 
 
 def parse_schema(schema: str) -> Tuple[str, ...]:
@@ -34,12 +45,7 @@ def wgrid_impl(
   weights,
   flags,
   frequencies,
-  nx,
-  ny,
-  pixsizex,
-  pixsizey,
-  epsilon,
-  schema,
+  wgrid_literal_params,
 ):
   pass
 
@@ -54,70 +60,59 @@ def wgrid_overload(
   weights,
   flags,
   frequencies,
-  nx,
-  ny,
-  pixsizex,
-  pixsizey,
-  epsilon,
-  schema,
+  wgrid_literal_params,
 ):
   if not isinstance(uvw, types.Array) or not isinstance(uvw.dtype, types.Float):
-    raise TypeError(f"'uvw' {uvw} must be a Float Array")
+    raise TypingError(f"'uvw' {uvw} must be a Float Array")
 
   if not isinstance(visibilities, types.Array) or not isinstance(
     visibilities.dtype, types.Complex
   ):
-    raise TypeError(f"'visibilities' {visibilities} must be a Complex Array")
+    raise TypingError(f"'visibilities' {visibilities} must be a Complex Array")
 
   if not isinstance(frequencies, types.Array) or not isinstance(
     frequencies.dtype, types.Float
   ):
-    raise TypeError(f"'frequencies' {frequencies} must be a Float Array")
+    raise TypingError(f"'frequencies' {frequencies} must be a Float Array")
 
   if not isinstance(weights, types.Array) or not isinstance(weights.dtype, types.Float):
-    raise TypeError(f"'weights' {weights} must be a Float Array")
+    raise TypingError(f"'weights' {weights} must be a Float Array")
 
   if not isinstance(flags, types.Array) or not isinstance(
     flags.dtype, (types.Integer, types.Boolean)
   ):
-    raise TypeError(f"'flags' {flags} must be a Integer or Boolean Array")
+    raise TypingError(f"'flags' {flags} must be a Integer or Boolean Array")
 
-  if not isinstance(schema, types.StringLiteral):
-    raise RequireLiteralValue(f"'schema' {schema} is not a string literal")
+  if not isinstance(wgrid_literal_params, DatumLiteral):
+    raise RequireLiteralValue(
+      f"'wgrid_literal_params' {wgrid_literal_params} is not a DatumLiteral"
+    )
 
-  if not isinstance(nx, types.IntegerLiteral):
-    raise RequireLiteralValue(f"'nx' {nx} is not a int literal")
-
-  if not isinstance(ny, types.IntegerLiteral):
-    raise RequireLiteralValue(f"'ny' {ny} is not a int literal")
-
-  if not isinstance(pixsizex, types.StringLiteral):
-    raise RequireLiteralValue(f"'pixsizex' {pixsizex} is not a string literal")
-
-  if not isinstance(pixsizey, types.StringLiteral):
-    raise RequireLiteralValue(f"'pixsizey' {pixsizey} is not a string literal")
-
-  if not isinstance(epsilon, types.StringLiteral):
-    raise RequireLiteralValue(f"'epsilon' {epsilon} is not a string literal")
+  if not isinstance(
+    (wgrid_params := wgrid_literal_params.datum_value), WGridderParameters
+  ):
+    raise TypingError(
+      f"'wgrid_literal_params' {type(wgrid_params)} must be a WGridderParameters "
+    )
 
   try:
-    pol_str, stokes_str = schema.literal_value.split("->")
+    pol_str, stokes_str = wgrid_params.schema.split("->")
   except ValueError as e:
     raise ValueError(
-      f"{schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
+      f"{wgrid_params.schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
-  KERNEL = Datum(ESKernel(float(epsilon.literal_value)))
+  KERNEL = Datum(wgrid_params.kernel)
   POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
   STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
   NSTOKES = len(STOKES_SCHEMA_DATUM.value)
   NPOL = len(POL_SCHEMA_DATUM.value)
   NUVW = len(["U", "V", "W"])
 
-  NX = nx.literal_value
-  NY = ny.literal_value
-  PIXSIZEX = float(pixsizex.literal_value)
-  PIXSIZEY = float(pixsizey.literal_value)
+  NX = wgrid_params.nx
+  NY = wgrid_params.ny
+  PIXSIZEX = wgrid_params.pixsizex
+  PIXSIZEY = wgrid_params.pixsizey
   U_CELL = 1.0 / (NX * PIXSIZEX)
   V_CELL = 1.0 / (NY * PIXSIZEY)
   U_MAX = 1.0 / PIXSIZEX / 2.0
@@ -130,12 +125,7 @@ def wgrid_overload(
     weights,
     flags,
     frequencies,
-    nx,
-    ny,
-    pixsizex,
-    pixsizey,
-    epsilon,
-    schema,
+    wgrid_literal_params,
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
@@ -206,12 +196,7 @@ def wgrid(
   weights: npt.NDArray[np.floating],
   flags: npt.NDArray[np.integer],
   frequencies: npt.NDArray[np.floating],
-  nx: int,
-  ny: int,
-  pixsizex: float,
-  pixsizey: float,
-  epsilon: float,
-  schema: str,
+  wgrid_literal_params: DatumLiteral[WGridderParameters],
 ) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
     uvw,
@@ -219,10 +204,5 @@ def wgrid(
     weights,
     flags,
     frequencies,
-    numba.literally(nx),
-    numba.literally(ny),
-    numba.literally(pixsizex),
-    numba.literally(pixsizey),
-    numba.literally(epsilon),
-    numba.literally(schema),
+    numba.literally(wgrid_literal_params),
   )
