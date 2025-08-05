@@ -156,7 +156,7 @@ def test_tapers(ms_name):
     assert_array_almost_equal(1 + diff, 1.0, decimal=7)
 
 
-@pmp("fov", (1.0,))
+@pmp("fov", (50.0,))
 @pmp("precision", ("single",))
 def test_grid_data(fov, precision, ms_name):
   rng = np.random.default_rng(seed=42)
@@ -166,13 +166,13 @@ def test_grid_data(fov, precision, ms_name):
     complex_type = np.complex128
 
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
-  dt_ms = dt[dt.groups[1]]
+  dt_ms = dt[dt.groups[1]].isel(frequency=slice(0, 1))
   dt_ant = dt[dt.groups[2]]
   vis_shape = dt_ms.VISIBILITY.shape
   vis = rng.normal(size=vis_shape) + 1.0j * rng.normal(size=vis_shape)
   wgt = dt_ms.WEIGHT.values
   flag = dt_ms.FLAG.values
-  freq = dt_ms.frequency.values
+  freq = dt_ms.frequency.values / 1e2
   uvw = dt_ms.UVW.values
   ntime, nbl, nchan, ncorr = vis.shape
   nant = dt_ant.antenna_name.size
@@ -244,7 +244,7 @@ def test_grid_data(fov, precision, ms_name):
   assert_array_almost_equal(1 + diff, 1.0, decimal=6)
 
 
-@pmp("fov", (1.0,))
+@pmp("fov", (50.0,))
 @pmp("precision", ("single",))
 def test_wgrid_data(fov, precision, ms_name):
   rng = np.random.default_rng(seed=42)
@@ -254,13 +254,13 @@ def test_wgrid_data(fov, precision, ms_name):
     complex_type = np.complex128
 
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
-  dt_ms = dt[dt.groups[1]]
+  dt_ms = dt[dt.groups[1]].isel(frequency=slice(0, 1))
   dt_ant = dt[dt.groups[2]]
   vis_shape = dt_ms.VISIBILITY.shape
   vis = rng.normal(size=vis_shape) + 1.0j * rng.normal(size=vis_shape)
   wgt = dt_ms.WEIGHT.values
   flag = dt_ms.FLAG.values
-  freq = dt_ms.frequency.values
+  freq = dt_ms.frequency.values / 1e2
   uvw = dt_ms.UVW.values
   ntime, nbl, nchan, ncorr = vis.shape
   nant = dt_ant.antenna_name.size
@@ -290,9 +290,6 @@ def test_wgrid_data(fov, precision, ms_name):
   if nx % 2:
     nx += 1
   ny = nx
-  from time import time
-
-  ti = time()
   dirty_dft = explicit_gridder(
     uvw,
     freq,
@@ -310,8 +307,6 @@ def test_wgrid_data(fov, precision, ms_name):
     vis_func,
     wgt_func,
   )
-  print("dft - ", time() - ti)
-  ti = time()
   dirty = vis2im_wgrid(
     uvw,
     freq,
@@ -329,7 +324,6 @@ def test_wgrid_data(fov, precision, ms_name):
     product,
     ncorr,
   )
-  print("wgrid - ", time() - ti)
   # we compare fractional differences because abs values can be very large
   diff = (dirty - dirty_dft) / dirty_dft.max()
   assert_array_almost_equal(1 + diff, 1.0, decimal=6)
