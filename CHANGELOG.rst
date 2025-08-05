@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Speed up DFT tests by discarding channels and imaging at a lower frequency (:pr:`38`)
 * Introduce a literal WGridderParameters argumen to to the numba wgridder (:pr:`36`)
 * Remove comment describing threads from a previous attempt at parallelisation of explicit_gridde (:pr:`34`)
 * Add full reference gridding and wgridding implementations (:pr:`32`)
