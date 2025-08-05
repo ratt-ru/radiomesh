@@ -26,14 +26,11 @@ def test_es_kernel_intrinsic():
   KERNEL = Datum(ESKernel())
   HALF_SUPPORT_INT = KERNEL.value.half_support_int
 
-  N = 1024
-
   @numba.njit
   def fn(u):
     ps = int(np.round(u)) - HALF_SUPPORT_INT
-    k = es_kernel_positions(KERNEL, N, ps)
-    return eval_es_kernel(KERNEL, k, u, ps)
+    return eval_es_kernel(KERNEL, u, ps)
 
   u = 2.3
   kernel_values = fn(u)
-  assert sum(int(kv > 0) for kv in kernel_values) == 8
+  assert sum(int(kv > 0) for kv in kernel_values) == len(kernel_values) - 1
