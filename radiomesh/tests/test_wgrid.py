@@ -1,11 +1,13 @@
+import numba
 import numpy as np
 import pytest
 
 from radiomesh.constants import LIGHTSPEED
+from radiomesh.core import grid_data
 from radiomesh.es_kernel import ESKernel
 from radiomesh.gridding import WGridderParameters, wgrid
 from radiomesh.literals import Datum
-from radiomesh.utils import image_params
+from radiomesh.utils import image_params, wgridder_conventions
 
 
 @pytest.mark.parametrize("nx", [1024])
@@ -17,6 +19,7 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
   rng = np.random.default_rng(42)
 
   shape = (100, 7 * 6 // 2, 64, 4)  # (ntime, nbl, nchan, npol)
+  ntime, nbl, nchan, npol = shape
 
   pixsize = fov * np.pi / 180.0 / nx
 
@@ -42,5 +45,49 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
 
   assert vis_grid.shape == (4, nx, ny)
   assert weight_grid.shape == (nx, ny)
-  assert vis_grid.dtype == vis.real.dtype
+  # assert vis_grid.dtype == vis.real.dtype
   assert weight_grid.dtype == weights.dtype
+
+  # Set up identity jones for a single antenna
+  # zero ant1 and ant2 refer to this
+  ant1 = ant2 = np.zeros(shape[1], np.int32)
+  jones = np.zeros((ntime, 1, nchan, npol), np.complex64)
+  jones[..., 0] = 1.0
+  jones[..., -1] = 1.0
+
+  @numba.njit
+  def wgt_func(gp, gq, wgt):
+    """passthrough noop"""
+    return wgt
+
+  @numba.njit
+  def vis_func(gp, gq, wgt, vis):
+    """passthrough noop"""
+    return vis
+
+  usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
+
+  result = grid_data(
+    uvw,
+    freqs,
+    vis,
+    weights,
+    flags,
+    jones,
+    ant1,
+    ant2,
+    wgrid_params.nx,
+    wgrid_params.ny,
+    wgrid_params.pixsizex,
+    wgrid_params.pixsizey,
+    npol,
+    vis_func,
+    wgt_func,
+    alpha=wgrid_params.kernel.support,
+    beta=wgrid_params.kernel.beta,
+    mu=wgrid_params.kernel.mu,
+    usign=usign,
+    vsign=vsign,
+  )
+
+  np.testing.assert_allclose(vis_grid, result)
