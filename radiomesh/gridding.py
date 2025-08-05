@@ -16,7 +16,7 @@ from radiomesh.intrinsics import (
   apply_weights,
   check_args,
   load_data,
-  pol_to_stokes,
+  pol_to_stokes,  # noqa
 )
 from radiomesh.literals import Datum, DatumLiteral
 from radiomesh.utils import wgridder_conventions
@@ -111,7 +111,7 @@ def wgrid_overload(
   HALF_SUPPORT_INT = wgrid_params.kernel.half_support_int
   POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
   STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
-  NSTOKES = len(STOKES_SCHEMA_DATUM.value)
+  NSTOKES = len(STOKES_SCHEMA_DATUM.value)  # noqa
   NPOL = len(POL_SCHEMA_DATUM.value)
   NUVW = len(["U", "V", "W"])
 
@@ -134,7 +134,9 @@ def wgrid_overload(
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.real.dtype)
+    # TODO: reintroduce this
+    # vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.real.dtype)
+    vis_grid = np.zeros((NPOL, NX, NY), visibilities.dtype)
     weight_grid = np.zeros((NX, NY), weights.dtype)
 
     vis_grid_view = vis_grid[:]
@@ -152,7 +154,9 @@ def wgrid_overload(
           vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
           wgt = load_data(weights, (t, bl, ch), NPOL, -1)
           vis = apply_weights(vis, wgt)
-          stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
+          # TODO: reintroduce this
+          # stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
+          stokes = vis
 
           # Scaled uv coordinates
           u_scaled = u * U_SIGN * wavelengths[ch] * PIXSIZEX
@@ -185,7 +189,9 @@ def wgrid_overload(
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(stokes, pol_weight)
-              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
+              # TODO: reintroduce this
+              # accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
+              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NPOL, 0)
               weight_grid_view[xi, yi] += pol_weight
 
     return vis_grid, weight_grid
