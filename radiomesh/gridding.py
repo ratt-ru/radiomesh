@@ -144,7 +144,7 @@ def wgrid_overload(
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
-          # Return early if entire visibility is flagged
+          # Return early if any polarisation is flagged
           vis_flag = load_data(flags, (t, bl, ch), NPOL, -1)
           if reduce(flag_reduce, vis_flag, False):
             continue
