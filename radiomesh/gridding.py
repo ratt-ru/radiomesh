@@ -13,7 +13,6 @@ from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
 from radiomesh.intrinsics import (
   accumulate_data,
-  apply_flags,
   apply_weights,
   check_args,
   load_data,
@@ -152,7 +151,6 @@ def wgrid_overload(
 
           vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
           wgt = load_data(weights, (t, bl, ch), NPOL, -1)
-          wgt = apply_flags(wgt, vis_flag)
           vis = apply_weights(vis, wgt)
           stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
 
