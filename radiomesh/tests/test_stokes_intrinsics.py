@@ -62,6 +62,7 @@ def test_data_convert(data_type, pol_schema, stokes_schema, gain_schema):
     data = data + np.random.random((NROW, NPOL)) * 1j
   gains = np.random.random((NROW, NGAINS)) + np.random.random((NROW, NGAINS)) * 1j
 
-  conv_vis = convert(data, gains)
-  assert conv_vis.shape == ((NROW, NSTOKES))
-  assert conv_vis.dtype == np.complex128 if data_type == "vis" else np.complex64
+  conv_data = convert(data, gains)
+  assert np.all(np.abs(conv_data) != 0.0)
+  assert conv_data.shape == ((NROW, NSTOKES))
+  assert conv_data.dtype == np.complex128 if data_type == "vis" else np.complex64
