@@ -29,6 +29,10 @@ dev = [
 ]
 
 
+[project.scripts]
+
+radiomesh = "radiomesh.scripts.main:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
