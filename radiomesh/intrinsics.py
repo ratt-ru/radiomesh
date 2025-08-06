@@ -21,7 +21,7 @@ STOKES_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
   "YY": {("I", "Q"): lambda i, q: i - q + 0j},
 }
 
-# A `S: {(P1, P2): FN}` mapping from polarisatoins to stokes parameters
+# A `S: {(P1, P2): FN}` mapping from polarisations to stokes parameters
 # where P1 and P2 are the polarisations input to function FN
 # to produce stokes S.
 POL_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
