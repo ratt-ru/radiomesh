@@ -230,8 +230,9 @@ def data_conv_fn(
       "GAINS" if have_gains else "NOGAINS",
     )
 
-    # Build conversion function arguments on argument types
-    # When gains are present these functions take 12 arguments
+    # Build conversion function arguments and argument types
+    # When gains are present 12 arguments are needed
+    # (4*vis/weight, 4*gain_p, 4*gain_q)
     # otherwise they only take the 4 visibilities/weights
     fn_args = []
     fn_arg_types = []
@@ -267,7 +268,7 @@ def data_conv_fn(
         elif src_type is DataSource.Default:
           arg_value = ir.Constant(llvm_gains_p_type, src_value)
         else:
-          raise ValueError(f"Unhandled source type {src_type}")
+          raise ValueError(f"Unhandled DataSource type {src_type}")
 
         fn_args.append(arg_value)
         fn_arg_types.append(gains_p_type.dtype)
@@ -280,7 +281,7 @@ def data_conv_fn(
         elif src_type is DataSource.Default:
           arg_value = ir.Constant(llvm_gains_q_type, src_value)
         else:
-          raise ValueError(f"Unhandled source type {src_type}")
+          raise ValueError(f"Unhandled DataSource type {src_type}")
 
         fn_args.append(arg_value)
         fn_arg_types.append(gains_q_type.dtype)
