@@ -13,13 +13,12 @@ from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
 from radiomesh.intrinsics import (
   accumulate_data,
-  apply_flags,
   apply_weights,
   check_args,
   load_data,
-  pol_to_stokes,
 )
 from radiomesh.literals import Datum, DatumLiteral
+from radiomesh.stokes_intrinsics import data_conv_fn
 from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
@@ -132,7 +131,7 @@ def wgrid_overload(
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.real.dtype)
+    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
     weight_grid = np.zeros((NX, NY), weights.dtype)
 
     vis_grid_view = vis_grid[:]
@@ -149,9 +148,13 @@ def wgrid_overload(
 
           vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
           wgt = load_data(weights, (t, bl, ch), NPOL, -1)
-          wgt = apply_flags(wgt, vis_flag)
+          vis = data_conv_fn(
+            vis, None, None, "vis", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
+          )
+          wgt = data_conv_fn(
+            wgt, None, None, "weight", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
+          )
           vis = apply_weights(vis, wgt)
-          stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
 
           # Pixel coordinates
           u_pixel = (U_SIGN * u * wavelengths[ch] + U_MAX) / U_CELL
@@ -180,7 +183,7 @@ def wgrid_overload(
             ):
               pol_weight = xk * yk
               yi = int(yfi)
-              weighted_stokes = apply_weights(stokes, pol_weight)
+              weighted_stokes = apply_weights(vis, pol_weight)
               accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
               weight_grid_view[xi, yi] += pol_weight
 

@@ -42,5 +42,5 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
 
   assert vis_grid.shape == (4, nx, ny)
   assert weight_grid.shape == (nx, ny)
-  assert vis_grid.dtype == vis.real.dtype
+  assert vis_grid.dtype == vis.dtype
   assert weight_grid.dtype == weights.dtype
