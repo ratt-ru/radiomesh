@@ -213,8 +213,7 @@ def data_conv_fn(
     "GAINS" if have_gains else "NOGAINS",
   )
 
-  stokes_type = data.dtype
-  return_type = types.Tuple([stokes_type] * len(stokes_schema))
+  return_type = types.Tuple([data.dtype] * len(stokes_schema))
   sig = return_type(
     data,
     gains_p,
@@ -237,7 +236,7 @@ def data_conv_fn(
     fn_args = []
     fn_arg_types = []
 
-    # Conversion functions take all four polarisations for
+    # Conversion functions need all four polarisations for
     # data and both sets of gains (if gains are present)
     # Prefer extraction from data/gains, else use defaults
     data_pols = LINEAR_POLS if data_pol_type == "LINEAR" else CIRCULAR_POLS
@@ -287,7 +286,7 @@ def data_conv_fn(
         fn_arg_types.append(gains_q_type.dtype)
 
     # Signature is the same for all stokes parameters
-    conv_fn_sig = stokes_type(*fn_arg_types)
+    conv_fn_sig = data_type.dtype(*fn_arg_types)
 
     # Generate the tuple of stokes parameters
     llvm_ret_type = context.get_value_type(signature.return_type)

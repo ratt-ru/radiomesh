@@ -65,10 +65,9 @@ def test_data_convert(data_type, pol_schema, stokes_schema, gain_schema):
   if data_type == "vis":
     data = data + np.random.random((NROW, NPOL)) * 1j
 
+  gains = None
   if HAVE_GAINS:
     gains = np.random.random((NROW, NGAINS)) + np.random.random((NROW, NGAINS)) * 1j
-  else:
-    gains = None
 
   conv_data = convert(data, gains)
   assert np.all(np.abs(conv_data) != 0.0)
