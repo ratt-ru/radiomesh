@@ -1,7 +1,6 @@
 import importlib.resources
 import re
 from argparse import Namespace
-from collections import defaultdict
 from contextlib import ExitStack
 from typing import Dict, List, Literal, Tuple
 
@@ -20,8 +19,6 @@ from numpy import conjugate as conj
 
 
 """
-
-FnMapType = defaultdict[str, defaultdict[str, str]]
 
 POLARISATION_TYPES = ["linear", "circular"]
 P_GAIN_ARGUMENTS = ["gp00", "gp01", "gp10", "gp11"]
