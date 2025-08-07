@@ -50,7 +50,7 @@ def wgrid_impl(
   pass
 
 
-flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
+any_flagged = numba.njit(**JIT_OPTIONS)(lambda a, f: a or f != 0)
 
 
 @overload(wgrid_impl, jit_options=JIT_OPTIONS, prefer_literal=True)
@@ -142,9 +142,9 @@ def wgrid_overload(
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
-          # Return early if entire visibility is flagged
+          # Return early if any visibility is flagged
           vis_flag = load_data(flags, (t, bl, ch), NPOL, -1)
-          if reduce(flag_reduce, vis_flag, True):
+          if reduce(any_flagged, vis_flag, False):
             continue
 
           vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
