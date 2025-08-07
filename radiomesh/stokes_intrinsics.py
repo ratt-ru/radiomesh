@@ -206,6 +206,13 @@ def data_conv_fn(
   )
   check_stokes_datasources(stokes_schema, data_schema, data_source_map)
 
+  # key for looking up per-stokes conversion functions
+  base_key = (
+    data_type.upper(),
+    data_pol_type.upper(),
+    "GAINS" if have_gains else "NOGAINS",
+  )
+
   stokes_type = data.dtype
   return_type = types.Tuple([stokes_type] * len(stokes_schema))
   sig = return_type(
@@ -222,13 +229,6 @@ def data_conv_fn(
     data, gains_p, gains_q, _, _, _, _ = args
     data_type, gains_p_type, gains_q_type, _, _, _, _ = signature.args
     llvm_data_type = context.get_value_type(data_type.dtype)
-
-    # key for looking up per-stokes conversion functions
-    base_key = (
-      data_type.upper(),
-      data_pol_type.upper(),
-      "GAINS" if have_gains else "NOGAINS",
-    )
 
     # Build conversion function arguments and argument types
     # When gains are present 12 arguments are needed
