@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Treat warnings as errors in py.test (:pr:`40`)
+* Ignore xarray-ms ImputedMetadataWarnings in test cases (:pr:`40`)
 * Speed up DFT tests by discarding channels and imaging at a lower frequency (:pr:`38`)
 * Introduce a literal WGridderParameters argumen to to the numba wgridder (:pr:`36`)
 * Remove comment describing threads from a previous attempt at parallelisation of explicit_gridde (:pr:`34`)
