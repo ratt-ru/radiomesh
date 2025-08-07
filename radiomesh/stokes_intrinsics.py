@@ -6,7 +6,7 @@ from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import intrinsic
 
-from radiomesh._stokes_expr import VIS_FNS, WEIGHT_FNS
+from radiomesh._stokes_expr import CONVERT_FNS
 from radiomesh.literals import DatumLiteral
 
 LINEAR_POLS = ("XX", "XY", "YX", "YY")
@@ -196,7 +196,8 @@ def data_conv_fn(
   )
   check_stokes_datasources(stokes_schema, data_schema, data_source_map)
 
-  stokes_fns = (VIS_FNS if data_type == "vis" else WEIGHT_FNS)[data_pol_type]
+  base_key = (data_type.upper(), data_pol_type.upper(), "GAINS")
+
   stokes_type = data.dtype
   return_type = types.Tuple([stokes_type] * len(stokes_schema))
   sig = return_type(
@@ -273,7 +274,7 @@ def data_conv_fn(
     stokes_tuple = cgutils.get_null_value(llvm_ret_type)
 
     for s, stokes in enumerate(stokes_schema):
-      conv_fn = stokes_fns[stokes]
+      conv_fn = CONVERT_FNS[base_key + (stokes,)]
       value = context.compile_internal(builder, conv_fn, conv_fn_sig, fn_args)
       stokes_tuple = builder.insert_value(stokes_tuple, value, s)
 

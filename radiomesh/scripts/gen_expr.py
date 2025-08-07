@@ -3,7 +3,7 @@ import re
 from argparse import Namespace
 from collections import defaultdict
 from contextlib import ExitStack
-from typing import List, Literal, Tuple
+from typing import Dict, List, Literal, Tuple
 
 import sympy
 from sympy.physics.quantum import TensorProduct
@@ -34,7 +34,7 @@ VIS_FN_ARGUMENTS = VIS_ARGUMENTS + P_GAIN_ARGUMENTS + Q_GAIN_ARGUMENTS
 
 def sympy_expressions(
   polarisations: str | Literal["linear", "circular"],
-) -> Tuple[List[str], sympy.Expr, sympy.Expr]:
+) -> Tuple[List[str], sympy.Expr, sympy.Expr, sympy.Expr, sympy.Expr]:
   """
   Returns
   -------
@@ -93,7 +93,24 @@ def sympy_expressions(
   # Only keep diagonal of weights
   W = W.diagonal().T  # diagonal() returns row vector
 
-  return schema, C, W
+  C = sympy.simplify(C)
+  W = sympy.simplify(W)
+
+  id_gains = {
+    gp00: 1.0,
+    gp01: 0.0,
+    gp10: 0.0,
+    gp11: 1.0,
+    gq00: 1.0,
+    gq01: 0.0,
+    gq10: 0.0,
+    gq11: 1.0,
+  }
+
+  C_no_gains = sympy.simplify(C.subs(id_gains))
+  W_no_gains = sympy.simplify(W.subs(id_gains))
+
+  return schema, C, W, C_no_gains, W_no_gains
 
 
 def subs_sympy(expr: sympy.Expr) -> str:
@@ -116,43 +133,47 @@ def generate_expression(args: Namespace):
     f = stack.enter_context(open(expr_path, "w"))
 
     f.write(PREAMBLE)
-    vis_fns: FnMapType = defaultdict(lambda: defaultdict(str))
-    weights_fns: FnMapType = defaultdict(lambda: defaultdict(str))
+    conv_fns: Dict[Tuple[str, str, str, str], str] = {}
 
     for pol_type in POLARISATION_TYPES:
-      stokes_schema, coherencies, weights = sympy_expressions(pol_type)
-      assert coherencies.shape == (len(stokes_schema), 1)
-      assert weights.shape == (len(stokes_schema), 1)
-      coherencies = sympy.simplify(coherencies)
-      weights = sympy.simplify(weights)
+      stokes_schema, coh_gains, wgt_gains, coh, wgt = sympy_expressions(pol_type)
+      assert coh_gains.shape == coh.shape == (len(stokes_schema), 1)
+      assert wgt_gains.shape == wgt.shape == (len(stokes_schema), 1)
 
-      for stokes, coherencies in zip(stokes_schema, coherencies):
-        fn_name = f"{pol_type.upper()}_VIS_{stokes.upper()}"
-        vis_fns[pol_type.upper()][stokes.upper()] = fn_name  # type: ignore
+      for stokes, coh_gains in zip(stokes_schema, coh_gains):
+        fn_name = f"{pol_type.upper()}_VIS_GAINS_{stokes.upper()}"
+        key = ("VIS", pol_type.upper(), "GAINS", stokes.upper())
+        conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(VIS_FN_ARGUMENTS)}):\n")
-        f.write(f"  return {subs_sympy(coherencies)}\n")
+        f.write(f"  return {subs_sympy(coh_gains)}\n")
         f.write("\n")
 
-      for stokes, weights in zip(stokes_schema, weights):
-        fn_name = f"{pol_type.upper()}_WEIGHT_{stokes.upper()}"
-        weights_fns[pol_type.upper()][stokes.upper()] = fn_name  # type: ignore
+      for stokes, wgt_gains in zip(stokes_schema, wgt_gains):
+        fn_name = f"{pol_type.upper()}_WEIGHT_GAINS_{stokes.upper()}"
+        key = ("WEIGHT", pol_type.upper(), "GAINS", stokes.upper())
+        conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(WEIGHT_FN_ARGUMENTS)}):\n")
-        f.write(f"  return ({subs_sympy(weights)}).real\n")
+        f.write(f"  return ({subs_sympy(wgt_gains)}).real\n")
         f.write("\n")
 
-    f.write("VIS_FNS = {\n")
-    for pol_type, stokes_fn_map in vis_fns.items():
-      f.write(f'  "{pol_type}": {{\n')
-      for stokes, fn_name in stokes_fn_map.items():
-        f.write(f'    "{stokes}": {fn_name},\n')
-      f.write("  },\n")
+      for stokes, coh in zip(stokes_schema, coh):
+        fn_name = f"{pol_type.upper()}_VIS_NOGAINS_{stokes.upper()}"
+        key = ("VIS", pol_type.upper(), "NOGAINS", stokes.upper())
+        conv_fns[key] = fn_name
+        f.write(f"def {fn_name}({', '.join(VIS_ARGUMENTS)}):\n")
+        f.write(f"  return {subs_sympy(coh)}\n")
+        f.write("\n")
+
+      for stokes, wgt in zip(stokes_schema, wgt):
+        fn_name = f"{pol_type.upper()}_WEIGHT_NOGAINS_{stokes.upper()}"
+        key = ("WEIGHT", pol_type.upper(), "NOGAINS", stokes.upper())
+        conv_fns[key] = fn_name
+        f.write(f"def {fn_name}({', '.join(WEIGHT_ARGUMENTS)}):\n")
+        f.write(f"  return ({subs_sympy(wgt)}).real\n")
+        f.write("\n")
+
+    f.write("CONVERT_FNS = {\n")
+    for key, fn_name in conv_fns.items():
+      f.write(f"  {key}: {fn_name},\n")
     f.write("}\n")
     f.write("\n")
-
-    f.write("WEIGHT_FNS = {\n")
-    for pol_type, stokes_fn_map in weights_fns.items():
-      f.write(f'  "{pol_type}": {{\n')
-      for stokes, fn_name in stokes_fn_map.items():
-        f.write(f'    "{stokes}": {fn_name},\n')
-      f.write("  },\n")
-    f.write("}\n")
