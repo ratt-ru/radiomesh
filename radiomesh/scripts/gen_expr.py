@@ -134,9 +134,11 @@ def generate_expression(args: Namespace):
     conv_fns: Dict[Tuple[str, str, str, str], str] = {}
 
     for pol_type in POLARISATION_TYPES:
-      stokes_schema, coh_gains, wgt_gains, coh, wgt = sympy_expressions(pol_type)
-      assert coh_gains.shape == coh.shape == (len(stokes_schema), 1)
-      assert wgt_gains.shape == wgt.shape == (len(stokes_schema), 1)
+      stokes_schema, coh_gains, wgt_gains, coh_nogains, wgt_nogains = sympy_expressions(
+        pol_type
+      )
+      assert coh_gains.shape == coh_nogains.shape == (len(stokes_schema), 1)
+      assert wgt_gains.shape == wgt_nogains.shape == (len(stokes_schema), 1)
 
       for stokes, coh_gains in zip(stokes_schema, coh_gains):
         fn_name = f"{pol_type.upper()}_VIS_GAINS_{stokes.upper()}"
@@ -154,20 +156,20 @@ def generate_expression(args: Namespace):
         f.write(f"  return ({subs_sympy(wgt_gains)}).real\n")
         f.write("\n")
 
-      for stokes, coh in zip(stokes_schema, coh):
+      for stokes, coh_nogains in zip(stokes_schema, coh_nogains):
         fn_name = f"{pol_type.upper()}_VIS_NOGAINS_{stokes.upper()}"
         key = ("VIS", pol_type.upper(), "NOGAINS", stokes.upper())
         conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(VIS_ARGUMENTS)}):\n")
-        f.write(f"  return {subs_sympy(coh)}\n")
+        f.write(f"  return {subs_sympy(coh_nogains)}\n")
         f.write("\n")
 
-      for stokes, wgt in zip(stokes_schema, wgt):
+      for stokes, wgt_nogains in zip(stokes_schema, wgt_nogains):
         fn_name = f"{pol_type.upper()}_WEIGHT_NOGAINS_{stokes.upper()}"
         key = ("WEIGHT", pol_type.upper(), "NOGAINS", stokes.upper())
         conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(WEIGHT_ARGUMENTS)}):\n")
-        f.write(f"  return ({subs_sympy(wgt)}).real\n")
+        f.write(f"  return ({subs_sympy(wgt_nogains)}).real\n")
         f.write("\n")
 
     f.write("CONVERT_FNS = {\n")
