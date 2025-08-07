@@ -156,3 +156,21 @@ def test_intrinsic_caching():
 
   np.testing.assert_array_almost_equal(g(np.ones(10), 1) + 1, h(np.ones(10), 2))
   np.testing.assert_array_almost_equal(h(np.ones(10), 5) - 3, h(np.ones(10), 2))
+
+
+def test_none_type_intrinsic():
+  @intrinsic
+  def fintrinsic(typingctx, data, gains):
+    sig = types.none(data, gains)
+    print(sig, gains == types.none)
+
+    def codegen(context, builder, signature, args):
+      return None
+
+    return sig, codegen
+
+  @numba.njit(nogil=True)
+  def f(a, b=None):
+    return fintrinsic(a, b)
+
+  f((1, 2, 3))

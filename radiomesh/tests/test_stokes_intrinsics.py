@@ -17,6 +17,8 @@ from radiomesh.stokes_intrinsics import data_conv_fn
     (("XY", "YX"), ("U", "V"), ("XY", "YX")),
     (("XX", "XY", "YX", "YY"), ("I", "Q", "U", "V"), ("XX", "XY", "YX", "YY")),
     (("XX", "XY", "YX", "YY"), ("I", "Q"), ("XX", "XY", "YX", "YY")),
+    # No gains
+    (("XX", "XY", "YX", "YY"), ("I", "Q"), None),
     pytest.param(
       ("XX", "YY"),
       ("I",),
@@ -30,7 +32,7 @@ from radiomesh.stokes_intrinsics import data_conv_fn
       ("XX", "YY"),
       ("I",),
       ("RR", "LL"),
-      marks=pytest.mark.xfail(reason="pol schema != gain schema"),
+      marks=pytest.mark.xfail(reason="pol_schema linear, gain_schema circular"),
     ),
   ],
 )
@@ -38,11 +40,13 @@ from radiomesh.stokes_intrinsics import data_conv_fn
 def test_data_convert(data_type, pol_schema, stokes_schema, gain_schema):
   POL_SCHEMA = Datum(pol_schema)
   STOKES_SCHEMA = Datum(stokes_schema)
-  GAIN_SCHEMA = Datum(gain_schema)
   NROW = 10
   NPOL = len(pol_schema)
-  NGAINS = len(gain_schema)
   NSTOKES = len(stokes_schema)
+
+  HAVE_GAINS = gain_schema is not None
+  GAIN_SCHEMA = Datum(gain_schema) if HAVE_GAINS else None
+  NGAINS = len(gain_schema) if HAVE_GAINS else NPOL
 
   @numba.njit
   def convert(data, gains):
@@ -51,7 +55,7 @@ def test_data_convert(data_type, pol_schema, stokes_schema, gain_schema):
 
     for r in range(nrow):
       v = load_data(data, (r,), NPOL, -1)
-      g = load_data(gains, (r,), NGAINS, -1)
+      g = load_data(gains, (r,), NGAINS, -1) if HAVE_GAINS else None
       s = data_conv_fn(v, g, g, data_type, POL_SCHEMA, GAIN_SCHEMA, STOKES_SCHEMA)
       accumulate_data(s, result, (r,), NSTOKES, -1)
 
@@ -60,7 +64,11 @@ def test_data_convert(data_type, pol_schema, stokes_schema, gain_schema):
   data = np.random.random((NROW, NPOL))
   if data_type == "vis":
     data = data + np.random.random((NROW, NPOL)) * 1j
-  gains = np.random.random((NROW, NGAINS)) + np.random.random((NROW, NGAINS)) * 1j
+
+  if HAVE_GAINS:
+    gains = np.random.random((NROW, NGAINS)) + np.random.random((NROW, NGAINS)) * 1j
+  else:
+    gains = None
 
   conv_data = convert(data, gains)
   assert np.all(np.abs(conv_data) != 0.0)
