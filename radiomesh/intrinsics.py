@@ -1,47 +1,9 @@
-from typing import Callable, Dict, Tuple
+from typing import Callable, Tuple
 
 from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.core.typing.templates import Signature
 from numba.extending import intrinsic, register_jitable
-
-from radiomesh.literals import DatumLiteral
-
-# A `P: {(S1, S2): FN}` mapping from stokes parameters to polarisations
-# where S1 and S2 are the stokes parameters input to function FN
-# to produce polarisation P
-STOKES_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
-  "RR": {("I", "V"): lambda i, v: i + v + 0j},
-  "RL": {("Q", "U"): lambda q, u: q + u * 1j},
-  "LR": {("Q", "U"): lambda q, u: q - u * 1j},
-  "LL": {("I", "V"): lambda i, v: i - v + 0j},
-  "XX": {("I", "Q"): lambda i, q: i + q + 0j},
-  "XY": {("U", "V"): lambda u, v: u + v * 1j},
-  "YX": {("U", "V"): lambda u, v: u - v * 1j},
-  "YY": {("I", "Q"): lambda i, q: i - q + 0j},
-}
-
-# A `S: {(P1, P2): FN}` mapping from polarisations to stokes parameters
-# where P1 and P2 are the polarisations input to function FN
-# to produce stokes S.
-POL_CONVERSION: Dict[str, Dict[Tuple[str, str], Callable]] = {
-  "I": {
-    ("XX", "YY"): lambda xx, yy: (xx.real + yy.real) / 2.0,
-    ("RR", "LL"): lambda rr, ll: (rr.real + ll.real) / 2.0,
-  },
-  "Q": {
-    ("XX", "YY"): lambda xx, yy: (xx.real - yy.real) / 2.0,
-    ("RL", "LR"): lambda rl, lr: (rl.real + lr.real) / 2.0,
-  },
-  "U": {
-    ("XY", "YX"): lambda xy, yx: (xy.real + yx.real) / 2.0,
-    ("RL", "LR"): lambda rl, lr: (rl.imag - lr.imag) / 2.0,
-  },
-  "V": {
-    ("XY", "YX"): lambda xy, yx: (xy.imag - yx.imag) / 2.0,
-    ("RR", "LL"): lambda rr, ll: (rr.real - ll.real) / 2.0,
-  },
-}
 
 
 @intrinsic(prefer_literal=True)
@@ -248,79 +210,6 @@ def accumulate_data(
       context.compile_internal(builder, assign_factory(p), sig, [data, array, index])
 
     return None
-
-  return sig, codegen
-
-
-@intrinsic(prefer_literal=True)
-def pol_to_stokes(
-  typingctx, data: types.UniTuple, pol_schema: DatumLiteral, stokes_schema: DatumLiteral
-) -> Tuple[Signature, Callable]:
-  """Converts `data` tuple described by `pol_schema` into a tuple
-  described by `stokes_schema`"""
-  if not isinstance(pol_schema, DatumLiteral):
-    raise RequireLiteralValue(f"'pol_schema' ({pol_schema}) must be a DatumLiteral")
-
-  if not isinstance(stokes_schema, DatumLiteral):
-    raise RequireLiteralValue(
-      f"'stokes_schema' ({stokes_schema}) must be a DatumLiteral"
-    )
-
-  if not isinstance(data, types.UniTuple) or len(data) != len(pol_schema.datum_value):
-    raise TypingError(
-      f"data ({data}) should be a tuple of length {len(pol_schema.datum_value)}"
-    )
-
-  pol_schema_map = {c: i for i, c in enumerate(pol_schema.datum_value)}
-  conv_map = {}
-
-  for stokes in stokes_schema.datum_value:
-    try:
-      conv_schema = POL_CONVERSION[stokes]
-    except KeyError:
-      raise KeyError(
-        f"No method for producing stokes {stokes} is registered. "
-        f"The following targets are registered: {list(POL_CONVERSION.keys())}"
-      )
-
-    for (c1, c2), fn in conv_schema.items():
-      try:
-        i1 = pol_schema_map[c1]
-        i2 = pol_schema_map[c2]
-      except KeyError:
-        continue
-      else:
-        conv_map[stokes] = (i1, i2, fn)
-
-    if stokes not in conv_map:
-      raise ValueError(
-        f"No conversion to stokes {stokes} was possible. "
-        f"The following correlations are available {pol_schema.datum_value} "
-        f"but one of the following combinations {list(conv_schema.keys())} "
-        f"is required to produces {stokes}."
-      )
-
-  float_type = data.dtype.underlying_float
-  ret_type = types.Tuple([float_type] * len(stokes_schema.datum_value))
-  sig = ret_type(data, pol_schema, stokes_schema)
-
-  def codegen(context, builder, signature, args):
-    data, _, _ = args
-    data_type, _, _ = signature.args
-    llvm_type = context.get_value_type(signature.return_type)
-    stokes_tuple = cgutils.get_null_value(llvm_type)
-
-    for s, (i1, i2, conv_fn) in enumerate(conv_map.values()):
-      # Extract polarisations from the data tuple
-      p1 = builder.extract_value(data, i1)
-      p2 = builder.extract_value(data, i2)
-
-      # Compute stokes from polarisations and insert into result tuple
-      sig = signature.return_type[s](data_type.dtype, data_type.dtype)
-      stokes = context.compile_internal(builder, conv_fn, sig, [p1, p2])
-      stokes_tuple = builder.insert_value(stokes_tuple, stokes, s)
-
-    return stokes_tuple
 
   return sig, codegen
 

@@ -6,14 +6,11 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import intrinsic
 
 from radiomesh.intrinsics import (
-  POL_CONVERSION,
   accumulate_data,
   apply_flags,
   apply_weights,
   load_data,
-  pol_to_stokes,
 )
-from radiomesh.literals import Datum
 
 
 @pytest.mark.parametrize(
@@ -76,42 +73,6 @@ def test_accumulate_data():
     accumulate((i,) * shape[1], data, i)
 
   assert np.all(np.broadcast_to(np.arange(shape[0])[:, None], shape) * 2 == data)
-
-
-@pytest.mark.parametrize(
-  "pols,stokes",
-  [
-    (("XX", "XY", "YX", "YY"), ("I", "Q", "U", "V")),
-    (("RR", "RL", "LR", "LL"), ("I", "Q", "U", "V")),
-    (("XX", "YY"), ("I", "Q")),
-    (("RR", "LL"), ("I", "V")),
-  ],
-)
-def test_pol_conversion(pols, stokes):
-  """Test that converting from polarisation to stokes works.
-  This depends on correctness of the conversion routines in POL_CONVERSION"""
-  POL_DATUM = Datum(pols)
-  STOKES_DATUM = Datum(stokes)
-
-  @numba.njit
-  def convert(t):
-    return pol_to_stokes(t, POL_DATUM, STOKES_DATUM)
-
-  mapping = []
-
-  for s in stokes:
-    for (p1, p2), fn in POL_CONVERSION[s].items():
-      try:
-        p1i = pols.index(p1)
-        p2i = pols.index(p2)
-      except Exception:
-        continue
-      else:
-        mapping.append((p1i, p2i, fn))
-
-  values = np.random.random(len(pols)) + np.random.random(len(pols)) * 1j
-  expected = tuple(fn(values[p1], values[p2]) for p1, p2, fn in mapping)
-  assert convert(tuple(values)) == expected
 
 
 @intrinsic
