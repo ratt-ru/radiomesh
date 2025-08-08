@@ -64,7 +64,7 @@ def test_accumulate_data():
 
   @numba.njit
   def accumulate(d, a, i):
-    return accumulate_data(d, a, (i,), shape[1], -1)
+    return accumulate_data(d, a, (i,), -1)
 
   data = np.zeros(shape)
 

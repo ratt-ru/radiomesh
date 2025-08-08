@@ -216,9 +216,9 @@ def wgrid_overload(
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(vis, pol_weight)
-              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
+              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), 0)
               weighted_weights = apply_weights(wgt, pol_weight)
-              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), NSTOKES, 0)
+              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
 
     return vis_grid, weight_grid
 
