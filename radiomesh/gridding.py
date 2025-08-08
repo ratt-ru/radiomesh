@@ -132,7 +132,7 @@ def wgrid_overload(
     wavelengths = frequencies / LIGHTSPEED
 
     vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
-    weight_grid = np.zeros((NX, NY), weights.dtype)
+    weight_grid = np.zeros((NSTOKES, NX, NY), weights.dtype)
 
     vis_grid_view = vis_grid[:]
     weight_grid_view = weight_grid[:]
@@ -185,7 +185,8 @@ def wgrid_overload(
               yi = int(yfi)
               weighted_stokes = apply_weights(vis, pol_weight)
               accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
-              weight_grid_view[xi, yi] += pol_weight
+              weighted_weights = apply_weights(wgt, pol_weight)
+              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), NSTOKES, 0)
 
     return vis_grid, weight_grid
 
