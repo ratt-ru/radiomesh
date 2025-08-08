@@ -11,14 +11,14 @@ def LINEAR_VIS_GAINS_I(
   return (
     0.5
     * (
-      -gp00 * v01 * conj(gq01)
+      -gp00 * v10 * conj(gq10)
       + gp00 * v11 * conj(gq00)
-      + gp01 * v00 * conj(gq01)
-      - gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
+      - gp01 * v10 * conj(gq11)
+      + gp01 * v11 * conj(gq01)
+      + gp10 * v00 * conj(gq10)
+      - gp10 * v01 * conj(gq00)
       + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      - gp11 * v01 * conj(gq01)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -35,14 +35,14 @@ def LINEAR_VIS_GAINS_Q(
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq01)
+      gp00 * v10 * conj(gq10)
       - gp00 * v11 * conj(gq00)
-      - gp01 * v00 * conj(gq01)
-      + gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
+      - gp01 * v10 * conj(gq11)
+      + gp01 * v11 * conj(gq01)
+      - gp10 * v00 * conj(gq10)
+      + gp10 * v01 * conj(gq00)
       + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      - gp11 * v01 * conj(gq01)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -59,14 +59,14 @@ def LINEAR_VIS_GAINS_U(
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
+      gp00 * v10 * conj(gq11)
+      - gp00 * v11 * conj(gq01)
       + gp01 * v10 * conj(gq10)
+      - gp01 * v11 * conj(gq00)
+      - gp10 * v00 * conj(gq11)
       + gp10 * v01 * conj(gq01)
-      - gp10 * v11 * conj(gq00)
-      - gp11 * v00 * conj(gq01)
-      + gp11 * v10 * conj(gq00)
+      - gp11 * v00 * conj(gq10)
+      + gp11 * v01 * conj(gq00)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -84,14 +84,14 @@ def LINEAR_VIS_GAINS_V(
     0.5
     * 1j
     * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
-      + gp01 * v10 * conj(gq10)
-      - gp10 * v01 * conj(gq01)
-      + gp10 * v11 * conj(gq00)
-      + gp11 * v00 * conj(gq01)
-      - gp11 * v10 * conj(gq00)
+      gp00 * v10 * conj(gq11)
+      - gp00 * v11 * conj(gq01)
+      - gp01 * v10 * conj(gq10)
+      + gp01 * v11 * conj(gq00)
+      - gp10 * v00 * conj(gq11)
+      + gp10 * v01 * conj(gq01)
+      + gp11 * v00 * conj(gq10)
+      - gp11 * v01 * conj(gq00)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -106,14 +106,14 @@ def LINEAR_WEIGHT_GAINS_I(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq01)
-    + gp10 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq10)
-    + gp10 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq11)
-    + gp11 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq10)
-    + gp11 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq11)
+    gp00 * w00 * (gq00 * conj(gp00) + gq01 * conj(gp01)) * conj(gq00)
+    + gp00 * w01 * (gq10 * conj(gp00) + gq11 * conj(gp01)) * conj(gq10)
+    + gp01 * w00 * (gq00 * conj(gp00) + gq01 * conj(gp01)) * conj(gq01)
+    + gp01 * w01 * (gq10 * conj(gp00) + gq11 * conj(gp01)) * conj(gq11)
+    + gp10 * w10 * (gq00 * conj(gp10) + gq01 * conj(gp11)) * conj(gq00)
+    + gp10 * w11 * (gq10 * conj(gp10) + gq11 * conj(gp11)) * conj(gq10)
+    + gp11 * w10 * (gq00 * conj(gp10) + gq01 * conj(gp11)) * conj(gq01)
+    + gp11 * w11 * (gq10 * conj(gp10) + gq11 * conj(gp11)) * conj(gq11)
   ).real
 
 
@@ -121,14 +121,14 @@ def LINEAR_WEIGHT_GAINS_Q(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq01)
-    - gp10 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq10)
-    - gp10 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq11)
-    - gp11 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq10)
-    - gp11 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq11)
+    gp00 * w00 * (gq00 * conj(gp00) - gq01 * conj(gp01)) * conj(gq00)
+    + gp00 * w01 * (gq10 * conj(gp00) - gq11 * conj(gp01)) * conj(gq10)
+    - gp01 * w00 * (gq00 * conj(gp00) - gq01 * conj(gp01)) * conj(gq01)
+    - gp01 * w01 * (gq10 * conj(gp00) - gq11 * conj(gp01)) * conj(gq11)
+    + gp10 * w10 * (gq00 * conj(gp10) - gq01 * conj(gp11)) * conj(gq00)
+    + gp10 * w11 * (gq10 * conj(gp10) - gq11 * conj(gp11)) * conj(gq10)
+    - gp11 * w10 * (gq00 * conj(gp10) - gq01 * conj(gp11)) * conj(gq01)
+    - gp11 * w11 * (gq10 * conj(gp10) - gq11 * conj(gp11)) * conj(gq11)
   ).real
 
 
@@ -136,14 +136,14 @@ def LINEAR_WEIGHT_GAINS_U(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq10)
-    + gp00 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq11)
-    + gp01 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq10)
-    + gp01 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq01)
+    gp00 * w00 * (gq00 * conj(gp01) + gq01 * conj(gp00)) * conj(gq01)
+    + gp00 * w01 * (gq10 * conj(gp01) + gq11 * conj(gp00)) * conj(gq11)
+    + gp01 * w00 * (gq00 * conj(gp01) + gq01 * conj(gp00)) * conj(gq00)
+    + gp01 * w01 * (gq10 * conj(gp01) + gq11 * conj(gp00)) * conj(gq10)
+    + gp10 * w10 * (gq00 * conj(gp11) + gq01 * conj(gp10)) * conj(gq01)
+    + gp10 * w11 * (gq10 * conj(gp11) + gq11 * conj(gp10)) * conj(gq11)
+    + gp11 * w10 * (gq00 * conj(gp11) + gq01 * conj(gp10)) * conj(gq00)
+    + gp11 * w11 * (gq10 * conj(gp11) + gq11 * conj(gp10)) * conj(gq10)
   ).real
 
 
@@ -151,14 +151,14 @@ def LINEAR_WEIGHT_GAINS_V(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    -gp00 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq10)
-    - gp00 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq11)
-    - gp01 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq10)
-    - gp01 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq01)
+    -gp00 * w00 * (gq00 * conj(gp01) - gq01 * conj(gp00)) * conj(gq01)
+    - gp00 * w01 * (gq10 * conj(gp01) - gq11 * conj(gp00)) * conj(gq11)
+    + gp01 * w00 * (gq00 * conj(gp01) - gq01 * conj(gp00)) * conj(gq00)
+    + gp01 * w01 * (gq10 * conj(gp01) - gq11 * conj(gp00)) * conj(gq10)
+    - gp10 * w10 * (gq00 * conj(gp11) - gq01 * conj(gp10)) * conj(gq01)
+    - gp10 * w11 * (gq10 * conj(gp11) - gq11 * conj(gp10)) * conj(gq11)
+    + gp11 * w10 * (gq00 * conj(gp11) - gq01 * conj(gp10)) * conj(gq00)
+    + gp11 * w11 * (gq10 * conj(gp11) - gq11 * conj(gp10)) * conj(gq10)
   ).real
 
 
@@ -175,7 +175,7 @@ def LINEAR_VIS_NOGAINS_U(v00, v01, v10, v11):
 
 
 def LINEAR_VIS_NOGAINS_V(v00, v01, v10, v11):
-  return 0.5 * 1j * (v01 - v10)
+  return 0.5 * 1j * (-v01 + v10)
 
 
 def LINEAR_WEIGHT_NOGAINS_I(w00, w01, w10, w11):
@@ -200,14 +200,14 @@ def CIRCULAR_VIS_GAINS_I(
   return (
     0.5
     * (
-      -gp00 * v01 * conj(gq01)
+      -gp00 * v10 * conj(gq10)
       + gp00 * v11 * conj(gq00)
-      + gp01 * v00 * conj(gq01)
-      - gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
+      - gp01 * v10 * conj(gq11)
+      + gp01 * v11 * conj(gq01)
+      + gp10 * v00 * conj(gq10)
+      - gp10 * v01 * conj(gq00)
       + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      - gp11 * v01 * conj(gq01)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -224,14 +224,14 @@ def CIRCULAR_VIS_GAINS_Q(
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
+      gp00 * v10 * conj(gq11)
+      - gp00 * v11 * conj(gq01)
       + gp01 * v10 * conj(gq10)
+      - gp01 * v11 * conj(gq00)
+      - gp10 * v00 * conj(gq11)
       + gp10 * v01 * conj(gq01)
-      - gp10 * v11 * conj(gq00)
-      - gp11 * v00 * conj(gq01)
-      + gp11 * v10 * conj(gq00)
+      - gp11 * v00 * conj(gq10)
+      + gp11 * v01 * conj(gq00)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -249,14 +249,14 @@ def CIRCULAR_VIS_GAINS_U(
     0.5
     * 1j
     * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
-      + gp01 * v10 * conj(gq10)
-      - gp10 * v01 * conj(gq01)
-      + gp10 * v11 * conj(gq00)
-      + gp11 * v00 * conj(gq01)
-      - gp11 * v10 * conj(gq00)
+      gp00 * v10 * conj(gq11)
+      - gp00 * v11 * conj(gq01)
+      - gp01 * v10 * conj(gq10)
+      + gp01 * v11 * conj(gq00)
+      - gp10 * v00 * conj(gq11)
+      + gp10 * v01 * conj(gq01)
+      + gp11 * v00 * conj(gq10)
+      - gp11 * v01 * conj(gq00)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -273,14 +273,14 @@ def CIRCULAR_VIS_GAINS_V(
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq01)
+      gp00 * v10 * conj(gq10)
       - gp00 * v11 * conj(gq00)
-      - gp01 * v00 * conj(gq01)
-      + gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
+      - gp01 * v10 * conj(gq11)
+      + gp01 * v11 * conj(gq01)
+      - gp10 * v00 * conj(gq10)
+      + gp10 * v01 * conj(gq00)
       + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      - gp11 * v01 * conj(gq01)
     )
     / (
       gp00 * gp11 * conj(gq00) * conj(gq11)
@@ -295,14 +295,14 @@ def CIRCULAR_WEIGHT_GAINS_I(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq01)
-    + gp10 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq10)
-    + gp10 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq11)
-    + gp11 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq10)
-    + gp11 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq11)
+    gp00 * w00 * (gq00 * conj(gp00) + gq01 * conj(gp01)) * conj(gq00)
+    + gp00 * w01 * (gq10 * conj(gp00) + gq11 * conj(gp01)) * conj(gq10)
+    + gp01 * w00 * (gq00 * conj(gp00) + gq01 * conj(gp01)) * conj(gq01)
+    + gp01 * w01 * (gq10 * conj(gp00) + gq11 * conj(gp01)) * conj(gq11)
+    + gp10 * w10 * (gq00 * conj(gp10) + gq01 * conj(gp11)) * conj(gq00)
+    + gp10 * w11 * (gq10 * conj(gp10) + gq11 * conj(gp11)) * conj(gq10)
+    + gp11 * w10 * (gq00 * conj(gp10) + gq01 * conj(gp11)) * conj(gq01)
+    + gp11 * w11 * (gq10 * conj(gp10) + gq11 * conj(gp11)) * conj(gq11)
   ).real
 
 
@@ -310,14 +310,14 @@ def CIRCULAR_WEIGHT_GAINS_Q(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq10)
-    + gp00 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq11)
-    + gp01 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq10)
-    + gp01 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq01)
+    gp00 * w00 * (gq00 * conj(gp01) + gq01 * conj(gp00)) * conj(gq01)
+    + gp00 * w01 * (gq10 * conj(gp01) + gq11 * conj(gp00)) * conj(gq11)
+    + gp01 * w00 * (gq00 * conj(gp01) + gq01 * conj(gp00)) * conj(gq00)
+    + gp01 * w01 * (gq10 * conj(gp01) + gq11 * conj(gp00)) * conj(gq10)
+    + gp10 * w10 * (gq00 * conj(gp11) + gq01 * conj(gp10)) * conj(gq01)
+    + gp10 * w11 * (gq10 * conj(gp11) + gq11 * conj(gp10)) * conj(gq11)
+    + gp11 * w10 * (gq00 * conj(gp11) + gq01 * conj(gp10)) * conj(gq00)
+    + gp11 * w11 * (gq10 * conj(gp11) + gq11 * conj(gp10)) * conj(gq10)
   ).real
 
 
@@ -325,14 +325,14 @@ def CIRCULAR_WEIGHT_GAINS_U(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    -gp00 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq10)
-    - gp00 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq11)
-    - gp01 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq10)
-    - gp01 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq01)
+    -gp00 * w00 * (gq00 * conj(gp01) - gq01 * conj(gp00)) * conj(gq01)
+    - gp00 * w01 * (gq10 * conj(gp01) - gq11 * conj(gp00)) * conj(gq11)
+    + gp01 * w00 * (gq00 * conj(gp01) - gq01 * conj(gp00)) * conj(gq00)
+    + gp01 * w01 * (gq10 * conj(gp01) - gq11 * conj(gp00)) * conj(gq10)
+    - gp10 * w10 * (gq00 * conj(gp11) - gq01 * conj(gp10)) * conj(gq01)
+    - gp10 * w11 * (gq10 * conj(gp11) - gq11 * conj(gp10)) * conj(gq11)
+    + gp11 * w10 * (gq00 * conj(gp11) - gq01 * conj(gp10)) * conj(gq00)
+    + gp11 * w11 * (gq10 * conj(gp11) - gq11 * conj(gp10)) * conj(gq10)
   ).real
 
 
@@ -340,14 +340,14 @@ def CIRCULAR_WEIGHT_GAINS_V(
   w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq01)
-    - gp10 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq10)
-    - gp10 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq11)
-    - gp11 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq10)
-    - gp11 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq11)
+    gp00 * w00 * (gq00 * conj(gp00) - gq01 * conj(gp01)) * conj(gq00)
+    + gp00 * w01 * (gq10 * conj(gp00) - gq11 * conj(gp01)) * conj(gq10)
+    - gp01 * w00 * (gq00 * conj(gp00) - gq01 * conj(gp01)) * conj(gq01)
+    - gp01 * w01 * (gq10 * conj(gp00) - gq11 * conj(gp01)) * conj(gq11)
+    + gp10 * w10 * (gq00 * conj(gp10) - gq01 * conj(gp11)) * conj(gq00)
+    + gp10 * w11 * (gq10 * conj(gp10) - gq11 * conj(gp11)) * conj(gq10)
+    - gp11 * w10 * (gq00 * conj(gp10) - gq01 * conj(gp11)) * conj(gq01)
+    - gp11 * w11 * (gq10 * conj(gp10) - gq11 * conj(gp11)) * conj(gq11)
   ).real
 
 
@@ -360,7 +360,7 @@ def CIRCULAR_VIS_NOGAINS_Q(v00, v01, v10, v11):
 
 
 def CIRCULAR_VIS_NOGAINS_U(v00, v01, v10, v11):
-  return 0.5 * 1j * (v01 - v10)
+  return 0.5 * 1j * (-v01 + v10)
 
 
 def CIRCULAR_VIS_NOGAINS_V(v00, v01, v10, v11):

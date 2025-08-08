@@ -44,10 +44,10 @@ def sympy_expressions(
         from gains and weights.
   """
   # set up symbolic expressions
-  gp00, gp10, gp01, gp11 = sympy.symbols(" ".join(P_GAIN_ARGUMENTS), real=False)
-  gq00, gq10, gq01, gq11 = sympy.symbols(" ".join(Q_GAIN_ARGUMENTS), real=False)
+  gp00, gp01, gp10, gp11 = sympy.symbols(" ".join(P_GAIN_ARGUMENTS), real=False)
+  gq00, gq01, gq10, gq11 = sympy.symbols(" ".join(Q_GAIN_ARGUMENTS), real=False)
   w00, w01, w10, w11 = sympy.symbols(" ".join(WEIGHT_ARGUMENTS), real=True)
-  v00, v10, v01, v11 = sympy.symbols(" ".join(VIS_ARGUMENTS), real=False)
+  v00, v01, v10, v11 = sympy.symbols(" ".join(VIS_ARGUMENTS), real=False)
 
   # Jones matrices
   Gp = sympy.Matrix([[gp00, gp01], [gp10, gp11]])
@@ -95,14 +95,14 @@ def sympy_expressions(
   W = sympy.simplify(W)
 
   id_gains = {
-    gp00: 1.0,
-    gp01: 0.0,
-    gp10: 0.0,
-    gp11: 1.0,
-    gq00: 1.0,
-    gq01: 0.0,
-    gq10: 0.0,
-    gq11: 1.0,
+    gp00: 1 + 0j,
+    gp01: 0 + 0j,
+    gp10: 0 + 0j,
+    gp11: 1 + 0j,
+    gq00: 1 + 0j,
+    gq01: 0 + 0j,
+    gq10: 0 + 0j,
+    gq11: 1 + 0j,
   }
 
   C_no_gains = sympy.simplify(C.subs(id_gains))

@@ -57,7 +57,7 @@ def test_data_convert(data_type, pol_schema, stokes_schema, gain_schema):
       v = load_data(data, (r,), NPOL, -1)
       g = load_data(gains, (r,), NGAINS, -1) if HAVE_GAINS else None
       s = data_conv_fn(v, g, g, data_type, POL_SCHEMA, GAIN_SCHEMA, STOKES_SCHEMA)
-      accumulate_data(s, result, (r,), NSTOKES, -1)
+      accumulate_data(s, result, (r,), -1)
 
     return result
 

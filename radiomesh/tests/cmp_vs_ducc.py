@@ -3,7 +3,9 @@ import time
 
 import numpy as np
 
-from radiomesh.gridding import wgrid
+from radiomesh.es_kernel import ESKernel
+from radiomesh.gridding import WGridderParameters, wgrid
+from radiomesh.literals import Datum
 from radiomesh.utils import image_params
 
 
@@ -106,6 +108,13 @@ if __name__ == "__main__":
     wgt = wgt.reshape((ntime, -1) + wgt.shape[1:])
     flags = flags.reshape((ntime, -1) + flags.shape[1:])
 
+    kernel = ESKernel(epsilon)
+    print(kernel)
+
+    wgrid_params = WGridderParameters(
+      nx, ny, pixsizex, pixsizey, kernel, "[XX,XY,YX,YY] -> [I,Q,U,V]"
+    )
+
     ntime, nbl, nchan, ncorr = vis.shape
     start = time.time()
     wgrid(
@@ -114,12 +123,7 @@ if __name__ == "__main__":
       wgt,
       flags,
       freq,
-      nx,
-      ny,
-      str(pixsizex),
-      str(pixsizey),
-      str(epsilon),
-      "[XX,XY,YX,YY]->[I,Q,U,V]",
+      Datum(wgrid_params),
     )
     print(
       f"Time taken to map ({ntime},{nbl},{nchan},{ncorr}) "

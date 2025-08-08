@@ -17,14 +17,14 @@ from radiomesh.intrinsics import (
   check_args,
   load_data,
 )
+from radiomesh.jones_intrinsics import ApplyJonesParameters, maybe_apply_jones
 from radiomesh.literals import Datum, DatumLiteral
-from radiomesh.stokes_intrinsics import data_conv_fn
 from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
 
 
-@dataclass(unsafe_hash=True, eq=True)
+@dataclass(slots=True, eq=True, unsafe_hash=True)
 class WGridderParameters:
   nx: int
   ny: int
@@ -32,6 +32,8 @@ class WGridderParameters:
   pixsizey: float
   kernel: ESKernel
   schema: str
+  apply_w: bool = True
+  apply_fftshift: bool = True
 
 
 def parse_schema(schema: str) -> Tuple[str, ...]:
@@ -45,6 +47,7 @@ def wgrid_impl(
   flags,
   frequencies,
   wgrid_literal_params,
+  jones_params,
 ):
   pass
 
@@ -60,6 +63,7 @@ def wgrid_overload(
   flags,
   frequencies,
   wgrid_literal_params,
+  jones_params,
 ):
   if not isinstance(uvw, types.Array) or not isinstance(uvw.dtype, types.Float):
     raise TypingError(f"'uvw' {uvw} must be a Float Array")
@@ -82,6 +86,18 @@ def wgrid_overload(
   ):
     raise TypingError(f"'flags' {flags} must be a Integer or Boolean Array")
 
+  HAVE_JONES_PARAMS = jones_params != types.none
+
+  if HAVE_JONES_PARAMS and (
+    not isinstance(jones_params, types.Tuple)
+    or len(jones_params) != 2
+    or not all(isinstance(jp, types.Array) for jp in jones_params)
+  ):
+    raise TypingError(
+      f"'jones_params' {jones_params} must be None "
+      f"or a (jones, antenna_pairs) tuple of arrays"
+    )
+
   if not isinstance(wgrid_literal_params, DatumLiteral):
     raise RequireLiteralValue(
       f"'wgrid_literal_params' {wgrid_literal_params} is not a DatumLiteral"
@@ -101,10 +117,15 @@ def wgrid_overload(
       f"{wgrid_params.schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
     ) from e
 
+  # Currently this implementation only applies an fftshift
+  if not (apply_fftshift := wgrid_params.apply_fftshift):
+    raise NotImplementedError(f"wgrid_params.apply_fftshift={apply_fftshift}")
+
   KERNEL = Datum(wgrid_params.kernel)
+  HALF_SUPPORT_INT = wgrid_params.kernel.half_support_int
   POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
   STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
-  NSTOKES = len(STOKES_SCHEMA_DATUM.value)
+  NSTOKES = len(STOKES_SCHEMA_DATUM.value)  # noqa
   NPOL = len(POL_SCHEMA_DATUM.value)
   NUVW = len(["U", "V", "W"])
 
@@ -112,11 +133,21 @@ def wgrid_overload(
   NY = wgrid_params.ny
   PIXSIZEX = wgrid_params.pixsizex
   PIXSIZEY = wgrid_params.pixsizey
-  U_CELL = 1.0 / (NX * PIXSIZEX)
-  V_CELL = 1.0 / (NY * PIXSIZEY)
-  U_MAX = 1.0 / PIXSIZEX / 2.0
-  V_MAX = 1.0 / PIXSIZEY / 2.0
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
+
+  JONES_VIS_DATUM = Datum(
+    ApplyJonesParameters(
+      "vis", POL_SCHEMA_DATUM.value, POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value
+    )
+  )
+  JONES_WGT_DATUM = Datum(
+    ApplyJonesParameters(
+      "weight",
+      POL_SCHEMA_DATUM.value,
+      POL_SCHEMA_DATUM.value,
+      STOKES_SCHEMA_DATUM.value,
+    )
+  )
 
   def impl(
     uvw,
@@ -125,6 +156,7 @@ def wgrid_overload(
     flags,
     frequencies,
     wgrid_literal_params,
+    jones_params,
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
@@ -141,38 +173,38 @@ def wgrid_overload(
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
+          idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
-          vis_flag = load_data(flags, (t, bl, ch), NPOL, -1)
+          vis_flag = load_data(flags, idx, NPOL, -1)
           if reduce(any_flagged, vis_flag, False):
             continue
 
-          vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
-          wgt = load_data(weights, (t, bl, ch), NPOL, -1)
-          vis = data_conv_fn(
-            vis, None, None, "vis", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
-          )
-          wgt = data_conv_fn(
-            wgt, None, None, "weight", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
-          )
+          vis = load_data(visibilities, idx, NPOL, -1)
+          wgt = load_data(weights, idx, NPOL, -1)
+          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
+          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
           vis = apply_weights(vis, wgt)
 
-          # Pixel coordinates
-          u_pixel = (U_SIGN * u * wavelengths[ch] + U_MAX) / U_CELL
-          v_pixel = (V_SIGN * v * wavelengths[ch] + V_MAX) / V_CELL
+          # Scaled uv coordinates
+          u_scaled = u * U_SIGN * wavelengths[ch] * PIXSIZEX
+          v_scaled = v * V_SIGN * wavelengths[ch] * PIXSIZEY
 
-          # Indices
-          u_index = int(np.round(u_pixel))
-          v_index = int(np.round(v_pixel))
+          # UV coordinates on the FFT shifted grid
+          u_grid = (u_scaled * NX) % NX
+          v_grid = (v_scaled * NY) % NY
 
-          # Tuples of indices of length kernel.support
-          # centred on {u,v}_index
-          x_indices = es_kernel_positions(KERNEL, u_index)
-          y_indices = es_kernel_positions(KERNEL, v_index)
+          # Pixel indices at the start of the kernel
+          u_pixel_start = int(np.round(u_grid)) - HALF_SUPPORT_INT
+          v_pixel_start = int(np.round(v_grid)) - HALF_SUPPORT_INT
+
+          # Tuple of indices associated with each kernel value in X and Y
+          # Of length kernel.support
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
 
           # Tuples of kernel values of length kernel.support
-          # generated from (index - pixel)
-          x_kernel = eval_es_kernel(KERNEL, x_indices, u_pixel)
-          y_kernel = eval_es_kernel(KERNEL, y_indices, v_pixel)
+          x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
+          y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
           for xfi, xk in zip(
             numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
@@ -184,9 +216,9 @@ def wgrid_overload(
               pol_weight = xk * yk
               yi = int(yfi)
               weighted_stokes = apply_weights(vis, pol_weight)
-              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
+              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), 0)
               weighted_weights = apply_weights(wgt, pol_weight)
-              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), NSTOKES, 0)
+              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
 
     return vis_grid, weight_grid
 
@@ -201,6 +233,8 @@ def wgrid(
   flags: npt.NDArray[np.integer],
   frequencies: npt.NDArray[np.floating],
   wgrid_literal_params: DatumLiteral[WGridderParameters],
+  jones_params: Tuple[npt.NDArray[np.complexfloating], npt.NDArray[np.integer]]
+  | None = None,
 ) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
     uvw,
@@ -209,4 +243,5 @@ def wgrid(
     flags,
     frequencies,
     numba.literally(wgrid_literal_params),
+    jones_params,
   )

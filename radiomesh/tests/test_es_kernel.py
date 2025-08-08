@@ -10,28 +10,27 @@ def test_es_positions_intrinsic():
   around the given index"""
   KERNEL = Datum(ESKernel())
   assert KERNEL.value.support > 0
-  assert KERNEL.value.offsets == tuple(
-    float(p) - KERNEL.value.half_support for p in range(KERNEL.value.support)
-  )
+
+  N = 1024
+  x = 2
 
   @numba.njit
-  def fn(i):
-    return es_kernel_positions(KERNEL, i)
+  def fn(ps):
+    return es_kernel_positions(KERNEL, N, ps)
 
-  assert fn(2) == tuple(o + 2.0 for o in KERNEL.value.offsets)
+  assert fn(x) == tuple(((x + o) % N) for o in range(KERNEL.value.support))
 
 
 def test_es_kernel_intrinsic():
   """Test the ES kernel evaluation intrinsic"""
   KERNEL = Datum(ESKernel())
+  HALF_SUPPORT_INT = KERNEL.value.half_support_int
 
   @numba.njit
   def fn(u):
-    i = int(np.round(u))
-    p = es_kernel_positions(KERNEL, i)
-    return eval_es_kernel(KERNEL, p, u)
+    ps = int(np.round(u)) - HALF_SUPPORT_INT
+    return eval_es_kernel(KERNEL, u, ps)
 
   u = 2.3
   kernel_values = fn(u)
-  assert kernel_values[0] == 0  # The first value lies outside the kernel support?
-  assert sum(int(kv > 0) for kv in kernel_values) == KERNEL.value.support - 1
+  assert sum(int(kv > 0) for kv in kernel_values) == len(kernel_values) - 1
