@@ -71,9 +71,11 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
       a2 = antenna_pairs[bl, 1]
       j1 = load_data(jones, (t, a1, ch, 0), NGAIN, -1)
       j2 = load_data(jones, (t, a2, ch, 0), NGAIN, -1)
+      GAIN_SCHEMA_DATUM_ACTUAL = GAIN_SCHEMA_DATUM
     else:
       j1 = None
       j2 = None
+      GAIN_SCHEMA_DATUM_ACTUAL = None
 
     return data_conv_fn(
       data,
@@ -81,7 +83,7 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
       j2,
       DATA_TYPE,
       POL_SCHEMA_DATUM,
-      GAIN_SCHEMA_DATUM,
+      GAIN_SCHEMA_DATUM_ACTUAL,
       STOKES_SCHEMA_DATUM,
     )
 
