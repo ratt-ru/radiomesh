@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Pre-generate expressions for converting visibilities, weights and gains to stokes parameters (:pr:`39`)
 * Treat warnings as errors in py.test (:pr:`40`)
 * Use ``tarfile.extractall(.., filter="data")`` (:pr:`40`)
 * Ignore xarray-ms ImputedMetadataWarnings in test cases (:pr:`40`)

@@ -13,13 +13,12 @@ from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
 from radiomesh.intrinsics import (
   accumulate_data,
-  apply_flags,
   apply_weights,
   check_args,
   load_data,
-  pol_to_stokes,
 )
 from radiomesh.literals import Datum, DatumLiteral
+from radiomesh.stokes_intrinsics import data_conv_fn
 from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
@@ -50,7 +49,7 @@ def wgrid_impl(
   pass
 
 
-flag_reduce = numba.njit(**JIT_OPTIONS)(lambda a, f: a and f != 0)
+any_flagged = numba.njit(**JIT_OPTIONS)(lambda a, f: a or f != 0)
 
 
 @overload(wgrid_impl, jit_options=JIT_OPTIONS, prefer_literal=True)
@@ -132,8 +131,8 @@ def wgrid_overload(
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.real.dtype)
-    weight_grid = np.zeros((NX, NY), weights.dtype)
+    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
+    weight_grid = np.zeros((NSTOKES, NX, NY), weights.dtype)
 
     vis_grid_view = vis_grid[:]
     weight_grid_view = weight_grid[:]
@@ -142,16 +141,20 @@ def wgrid_overload(
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
-          # Return early if entire visibility is flagged
+          # Return early if any visibility is flagged
           vis_flag = load_data(flags, (t, bl, ch), NPOL, -1)
-          if reduce(flag_reduce, vis_flag, True):
+          if reduce(any_flagged, vis_flag, False):
             continue
 
           vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
           wgt = load_data(weights, (t, bl, ch), NPOL, -1)
-          wgt = apply_flags(wgt, vis_flag)
+          vis = data_conv_fn(
+            vis, None, None, "vis", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
+          )
+          wgt = data_conv_fn(
+            wgt, None, None, "weight", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
+          )
           vis = apply_weights(vis, wgt)
-          stokes = pol_to_stokes(vis, POL_SCHEMA_DATUM, STOKES_SCHEMA_DATUM)
 
           # Pixel coordinates
           u_pixel = (U_SIGN * u * wavelengths[ch] + U_MAX) / U_CELL
@@ -180,9 +183,10 @@ def wgrid_overload(
             ):
               pol_weight = xk * yk
               yi = int(yfi)
-              weighted_stokes = apply_weights(stokes, pol_weight)
+              weighted_stokes = apply_weights(vis, pol_weight)
               accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), NSTOKES, 0)
-              weight_grid_view[xi, yi] += pol_weight
+              weighted_weights = apply_weights(wgt, pol_weight)
+              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), NSTOKES, 0)
 
     return vis_grid, weight_grid
 
