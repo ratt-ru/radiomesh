@@ -1,4 +1,3 @@
-import numba
 import numpy as np
 import pytest
 
@@ -7,6 +6,7 @@ from radiomesh.core import grid_data
 from radiomesh.es_kernel import ESKernel
 from radiomesh.gridding import WGridderParameters, wgrid
 from radiomesh.literals import Datum
+from radiomesh.stokes import stokes_funcs
 from radiomesh.utils import image_params, wgridder_conventions
 
 
@@ -51,19 +51,16 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
   # Set up identity jones for a single antenna
   # zero ant1 and ant2 refer to this
   ant1 = ant2 = np.zeros(shape[1], np.int32)
-  jones = np.zeros((ntime, 1, nchan, npol), np.complex64)
+  na = 1
+  jones = np.zeros((ntime, na, nchan, npol), np.complex64)
   jones[..., 0] = 1.0
   jones[..., -1] = 1.0
 
-  @numba.njit
-  def wgt_func(gp, gq, wgt):
-    """passthrough noop"""
-    return wgt
-
-  @numba.njit
-  def vis_func(gp, gq, wgt, vis):
-    """passthrough noop"""
-    return vis
+  jones_dims = (2, 2)
+  assert npol == np.prod(jones_dims)
+  ndir = 1
+  jones = jones.reshape((ntime, na, nchan, ndir) + (jones_dims))
+  vis_func, wgt_func = stokes_funcs(jones, "IQUV", "linear", npol)
 
   usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
 
