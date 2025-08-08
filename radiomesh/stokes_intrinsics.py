@@ -98,10 +98,10 @@ def check_stokes_datasources(stokes_schema, data_schema, data_source_map):
     index_maps = 0
 
     for p1, p2 in deps:
-      s1 = data_source_map[p1]
-      s2 = data_source_map[p2]
+      s1_type, _ = data_source_map[p1]
+      s2_type, _ = data_source_map[p2]
 
-      if s1[0] is DataSource.Index and s2[0] is DataSource.Index:
+      if s1_type is DataSource.Index and s2_type is DataSource.Index:
         index_maps += 1
 
     if index_maps == 0:
