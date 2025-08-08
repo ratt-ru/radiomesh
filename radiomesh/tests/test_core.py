@@ -17,6 +17,7 @@ from radiomesh.core import (
 from radiomesh.stokes import stokes_funcs
 
 pmp = pytest.mark.parametrize
+pmfw = pytest.mark.filterwarnings
 
 
 def explicit_gridder(
@@ -87,6 +88,7 @@ def taper_trapz(domain, alpha=5, beta=2.3, mu=0.5):
   return res
 
 
+@pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
 def test_tapers(ms_name):
   """
   Compare Gauss-Legendre integration of kernel to trapz
@@ -158,6 +160,7 @@ def test_tapers(ms_name):
 
 @pmp("fov", (50.0,))
 @pmp("precision", ("single",))
+@pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
 def test_grid_data(fov, precision, ms_name):
   rng = np.random.default_rng(seed=42)
   if precision == "single":
@@ -244,6 +247,7 @@ def test_grid_data(fov, precision, ms_name):
   assert_array_almost_equal(1 + diff, 1.0, decimal=6)
 
 
+@pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
 @pmp("fov", (50.0,))
 @pmp("precision", ("single",))
 def test_wgrid_data(fov, precision, ms_name):
