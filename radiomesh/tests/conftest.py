@@ -25,7 +25,7 @@ def download_test_ms(path: Path) -> Path:
       f.write(download.content)
 
     with tarfile.open(ms_tar_path, "r:gz") as tar:
-      tar.extractall(path=path)
+      tar.extractall(path=path, filter="data")
 
     ms_tar_path.unlink()
 
