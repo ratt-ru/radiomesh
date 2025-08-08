@@ -14,7 +14,8 @@ from radiomesh.utils import image_params, wgridder_conventions
 @pytest.mark.parametrize("ny", [1024])
 @pytest.mark.parametrize("fov", [1.0])
 @pytest.mark.parametrize("oversampling", [2.0])
-def test_numba_wgrid(nx, ny, fov, oversampling):
+@pytest.mark.parametrize("apply_jones", [True, False])
+def test_numba_wgrid(nx, ny, fov, oversampling, apply_jones):
   """Smoke test. Call with NUMBA_DEBUG_CACHE=1 to ensure caching works"""
   rng = np.random.default_rng(42)
 
@@ -48,10 +49,14 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
   jones = np.zeros((ntime, na, nchan, ndir, npol), vis.dtype)
   jones[..., 0] = 1.0 + 0j
   jones[..., -1] = 1.0 + 0j
-  jones += 0.05 * (rng.normal(size=jones.shape) + 1j * rng.normal(size=jones.shape))
+  if apply_jones:
+    jones += 0.05 * (rng.normal(size=jones.shape) + 1j * rng.normal(size=jones.shape))
+    jones_params = (jones, antenna_pairs)
+  else:
+    jones_params = None
 
   vis_grid, weight_grid = wgrid(
-    uvw, vis, weights, flags, freqs, Datum(wgrid_params), (jones, antenna_pairs)
+    uvw, vis, weights, flags, freqs, Datum(wgrid_params), jones_params
   )
 
   assert vis_grid.shape == (4, nx, ny)

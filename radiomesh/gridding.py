@@ -17,8 +17,8 @@ from radiomesh.intrinsics import (
   check_args,
   load_data,
 )
+from radiomesh.jones_intrinsics import ApplyJonesParameters, maybe_apply_jones
 from radiomesh.literals import Datum, DatumLiteral
-from radiomesh.stokes_intrinsics import data_conv_fn
 from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
@@ -135,6 +135,20 @@ def wgrid_overload(
   PIXSIZEY = wgrid_params.pixsizey
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
 
+  JONES_VIS_DATUM = Datum(
+    ApplyJonesParameters(
+      "vis", POL_SCHEMA_DATUM.value, POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value
+    )
+  )
+  JONES_WGT_DATUM = Datum(
+    ApplyJonesParameters(
+      "weight",
+      POL_SCHEMA_DATUM.value,
+      POL_SCHEMA_DATUM.value,
+      STOKES_SCHEMA_DATUM.value,
+    )
+  )
+
   def impl(
     uvw,
     visibilities,
@@ -159,45 +173,16 @@ def wgrid_overload(
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
+          idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
-          vis_flag = load_data(flags, (t, bl, ch), NPOL, -1)
+          vis_flag = load_data(flags, idx, NPOL, -1)
           if reduce(any_flagged, vis_flag, False):
             continue
 
-          vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
-          wgt = load_data(weights, (t, bl, ch), NPOL, -1)
-
-          if HAVE_JONES_PARAMS:
-            jones, antenna_pairs = jones_params
-            a1 = antenna_pairs[bl, 0]
-            a2 = antenna_pairs[bl, 1]
-            j1 = load_data(jones, (t, a1, ch, 0), NPOL, -1)
-            j2 = load_data(jones, (t, a2, ch, 0), NPOL, -1)
-            vis = data_conv_fn(
-              vis,
-              j1,
-              j2,
-              "vis",
-              POL_SCHEMA_DATUM,
-              POL_SCHEMA_DATUM,
-              STOKES_SCHEMA_DATUM,
-            )
-            wgt = data_conv_fn(
-              wgt,
-              j1,
-              j2,
-              "weight",
-              POL_SCHEMA_DATUM,
-              POL_SCHEMA_DATUM,
-              STOKES_SCHEMA_DATUM,
-            )
-          else:
-            vis = data_conv_fn(
-              vis, None, None, "vis", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
-            )
-            wgt = data_conv_fn(
-              wgt, None, None, "weight", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
-            )
+          vis = load_data(visibilities, idx, NPOL, -1)
+          wgt = load_data(weights, idx, NPOL, -1)
+          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
+          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
           vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
