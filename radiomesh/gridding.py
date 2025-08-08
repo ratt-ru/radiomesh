@@ -47,6 +47,7 @@ def wgrid_impl(
   flags,
   frequencies,
   wgrid_literal_params,
+  jones_params,
 ):
   pass
 
@@ -62,6 +63,7 @@ def wgrid_overload(
   flags,
   frequencies,
   wgrid_literal_params,
+  jones_params,
 ):
   if not isinstance(uvw, types.Array) or not isinstance(uvw.dtype, types.Float):
     raise TypingError(f"'uvw' {uvw} must be a Float Array")
@@ -83,6 +85,18 @@ def wgrid_overload(
     flags.dtype, (types.Integer, types.Boolean)
   ):
     raise TypingError(f"'flags' {flags} must be a Integer or Boolean Array")
+
+  HAVE_JONES_PARAMS = jones_params != types.none
+
+  if HAVE_JONES_PARAMS and (
+    not isinstance(jones_params, types.Tuple)
+    or len(jones_params) != 2
+    or not all(isinstance(jp, types.Array) for jp in jones_params)
+  ):
+    raise TypingError(
+      f"'jones_params' {jones_params} must be None "
+      f"or a (jones, antenna_pairs) tuple of arrays"
+    )
 
   if not isinstance(wgrid_literal_params, DatumLiteral):
     raise RequireLiteralValue(
@@ -128,6 +142,7 @@ def wgrid_overload(
     flags,
     frequencies,
     wgrid_literal_params,
+    jones_params,
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
@@ -151,12 +166,38 @@ def wgrid_overload(
 
           vis = load_data(visibilities, (t, bl, ch), NPOL, -1)
           wgt = load_data(weights, (t, bl, ch), NPOL, -1)
-          vis = data_conv_fn(
-            vis, None, None, "vis", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
-          )
-          wgt = data_conv_fn(
-            wgt, None, None, "weight", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
-          )
+
+          if HAVE_JONES_PARAMS:
+            jones, antenna_pairs = jones_params
+            a1 = antenna_pairs[bl, 0]
+            a2 = antenna_pairs[bl, 1]
+            j1 = load_data(jones, (t, a1, ch, 0), NPOL, -1)
+            j2 = load_data(jones, (t, a2, ch, 0), NPOL, -1)
+            vis = data_conv_fn(
+              vis,
+              j1,
+              j2,
+              "vis",
+              POL_SCHEMA_DATUM,
+              POL_SCHEMA_DATUM,
+              STOKES_SCHEMA_DATUM,
+            )
+            wgt = data_conv_fn(
+              wgt,
+              j1,
+              j2,
+              "weight",
+              POL_SCHEMA_DATUM,
+              POL_SCHEMA_DATUM,
+              STOKES_SCHEMA_DATUM,
+            )
+          else:
+            vis = data_conv_fn(
+              vis, None, None, "vis", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
+            )
+            wgt = data_conv_fn(
+              wgt, None, None, "weight", POL_SCHEMA_DATUM, None, STOKES_SCHEMA_DATUM
+            )
           vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
@@ -207,6 +248,8 @@ def wgrid(
   flags: npt.NDArray[np.integer],
   frequencies: npt.NDArray[np.floating],
   wgrid_literal_params: DatumLiteral[WGridderParameters],
+  jones_params: Tuple[npt.NDArray[np.complexfloating], npt.NDArray[np.integer]]
+  | None = None,
 ) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
     uvw,
@@ -215,4 +258,5 @@ def wgrid(
     flags,
     frequencies,
     numba.literally(wgrid_literal_params),
+    jones_params,
   )

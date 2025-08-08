@@ -18,7 +18,10 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
   """Smoke test. Call with NUMBA_DEBUG_CACHE=1 to ensure caching works"""
   rng = np.random.default_rng(42)
 
-  shape = (100, 7 * 6 // 2, 64, 4)  # (ntime, nbl, nchan, npol)
+  na = 7
+  ant1, ant2 = np.triu_indices(na, 1)
+  antenna_pairs = np.stack([ant1, ant2], axis=1)
+  shape = (100, ant1.size, 64, 4)  # (ntime, nbl, nchan, npol)
   ntime, nbl, nchan, npol = shape
 
   pixsize = fov * np.pi / 180.0 / nx
@@ -41,24 +44,24 @@ def test_numba_wgrid(nx, ny, fov, oversampling):
     nx, ny, pixsizex, pixsizey, ESKernel(2e-13), schema="[XX,XY,YX,YY] -> [I,Q,U,V]"
   )
 
-  vis_grid, weight_grid = wgrid(uvw, vis, weights, flags, freqs, Datum(wgrid_params))
+  ndir = 1
+  jones = np.zeros((ntime, na, nchan, ndir, npol), vis.dtype)
+  jones[..., 0] = 1.0 + 0j
+  jones[..., -1] = 1.0 + 0j
+  jones += 0.05 * (rng.normal(size=jones.shape) + 1j * rng.normal(size=jones.shape))
+
+  vis_grid, weight_grid = wgrid(
+    uvw, vis, weights, flags, freqs, Datum(wgrid_params), (jones, antenna_pairs)
+  )
 
   assert vis_grid.shape == (4, nx, ny)
   assert weight_grid.shape == (4, nx, ny)
   assert vis_grid.dtype == vis.dtype
   assert weight_grid.dtype == weights.dtype
 
-  # Set up identity jones for a single antenna
-  # zero ant1 and ant2 refer to this
-  na = 1
-  ant1 = ant2 = np.zeros(nbl, np.int32)
-  jones = np.zeros((ntime, na, nchan, npol), vis.dtype)
-  jones[..., 0] = 1.0 + 0j
-  jones[..., -1] = 1.0 + 0j
-
+  # stokes_func wants a matrix form for jones
   jones_dims = (2, 2)
   assert npol == np.prod(jones_dims)
-  ndir = 1
   jones = jones.reshape((ntime, na, nchan, ndir) + (jones_dims))
   vis_func, wgt_func = stokes_funcs(jones, "IQUV", "linear", npol)
   usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
