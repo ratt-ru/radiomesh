@@ -10,7 +10,7 @@ from radiomesh.literals import Datum, DatumLiteral
 from radiomesh.stokes_intrinsics import data_conv_fn
 
 
-@dataclass(unsafe_hash=True, eq=True)
+@dataclass(slots=True, unsafe_hash=True, eq=True)
 class ApplyJonesParameters:
   data_type: Literal["vis", "weight"]
   pol_schema: Tuple[str, ...]
