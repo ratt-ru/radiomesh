@@ -31,7 +31,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Run test cases
-      run: uv run --extra testing py.test -s -vvv
+      run: uv run --extra testing py.test -s -vvv -Werror
 
   pre-commit:
     runs-on: ubuntu-latest
