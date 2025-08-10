@@ -164,13 +164,13 @@ class ESKernel:
   beta: float = 2.3
   mu: float = 0.5
   # Is w gridding enabled
-  apply_w: bool = False
+  apply_w: dataclasses.InitVar[bool] = False
   # Kernel support
   support: int = dataclasses.field(init=False)
 
-  def __post_init__(self):
+  def __post_init__(self, apply_w):
     """Determine the support given the other kernel parameters"""
-    factor = 3.0 if self.apply_w else 2.0
+    factor = 3.0 if apply_w else 2.0
     self.support = int(math.ceil(math.log10(factor * 1.0 / self.epsilon))) + 1
 
   @property
