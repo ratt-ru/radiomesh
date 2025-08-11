@@ -22,12 +22,12 @@ from numpy import conjugate as conj
 """
 
 POLARISATION_TYPES = ["linear", "circular"]
-P_GAIN_ARGUMENTS = ["gp00", "gp01", "gp10", "gp11"]
-Q_GAIN_ARGUMENTS = ["gq00", "gq01", "gq10", "gq11"]
+JONE_P_ARGUMENTS = ["jp00", "jp01", "jp10", "jp11"]
+JONES_Q_ARGUMENTS = ["jq00", "jq01", "jq10", "jq11"]
 WEIGHT_ARGUMENTS = ["w00", "w01", "w10", "w11"]
 VIS_ARGUMENTS = ["v00", "v01", "v10", "v11"]
-WEIGHT_FN_ARGUMENTS = WEIGHT_ARGUMENTS + P_GAIN_ARGUMENTS + Q_GAIN_ARGUMENTS
-VIS_FN_ARGUMENTS = VIS_ARGUMENTS + P_GAIN_ARGUMENTS + Q_GAIN_ARGUMENTS
+WEIGHT_FN_ARGUMENTS = WEIGHT_ARGUMENTS + JONE_P_ARGUMENTS + JONES_Q_ARGUMENTS
+VIS_FN_ARGUMENTS = VIS_ARGUMENTS + JONE_P_ARGUMENTS + JONES_Q_ARGUMENTS
 
 
 def sympy_expressions(
@@ -39,23 +39,23 @@ def sympy_expressions(
     A tuple of the form (schema, coherencies, weights) where
       1. schema is a list of stokes values
       2. coherencies is a sympy expression for generating stokes values
-        from visibilities, weights and gains
+        from visibilities, weights and jones
       3. weights is a sympy expression for generating weights
-        from gains and weights.
+        from jones and weights.
   """
   # set up symbolic expressions
-  gp00, gp01, gp10, gp11 = sympy.symbols(" ".join(P_GAIN_ARGUMENTS), real=False)
-  gq00, gq01, gq10, gq11 = sympy.symbols(" ".join(Q_GAIN_ARGUMENTS), real=False)
+  jp00, jp01, jp10, jp11 = sympy.symbols(" ".join(JONE_P_ARGUMENTS), real=False)
+  jq00, jq01, jq10, jq11 = sympy.symbols(" ".join(JONES_Q_ARGUMENTS), real=False)
   w00, w01, w10, w11 = sympy.symbols(" ".join(WEIGHT_ARGUMENTS), real=True)
   v00, v01, v10, v11 = sympy.symbols(" ".join(VIS_ARGUMENTS), real=False)
 
   # Jones matrices
-  Gp = sympy.Matrix([[gp00, gp01], [gp10, gp11]])
-  Gq = sympy.Matrix([[gq00, gq01], [gq10, gq11]])
+  Jp = sympy.Matrix([[jp00, jp01], [jp10, jp11]])
+  Jq = sympy.Matrix([[jq00, jq01], [jq10, jq11]])
 
   # Mueller matrix (row major form)
-  Mpq = TensorProduct(Gp, Gq.conjugate())
-  Mpqinv = TensorProduct(Gp.inv(), Gq.conjugate().inv())
+  Mpq = TensorProduct(Jp, Jq.conjugate())
+  Mpqinv = TensorProduct(Jp.inv(), Jq.conjugate().inv())
 
   # inverse noise covariance
   Sinv = sympy.Matrix([[w00, 0, 0, 0], [0, w01, 0, 0], [0, 0, w10, 0], [0, 0, 0, w11]])
@@ -94,21 +94,21 @@ def sympy_expressions(
   C = sympy.simplify(C)
   W = sympy.simplify(W)
 
-  id_gains = {
-    gp00: 1 + 0j,
-    gp01: 0 + 0j,
-    gp10: 0 + 0j,
-    gp11: 1 + 0j,
-    gq00: 1 + 0j,
-    gq01: 0 + 0j,
-    gq10: 0 + 0j,
-    gq11: 1 + 0j,
+  id_jones = {
+    jp00: 1 + 0j,
+    jp01: 0 + 0j,
+    jp10: 0 + 0j,
+    jp11: 1 + 0j,
+    jq00: 1 + 0j,
+    jq01: 0 + 0j,
+    jq10: 0 + 0j,
+    jq11: 1 + 0j,
   }
 
-  C_no_gains = sympy.simplify(C.subs(id_gains))
-  W_no_gains = sympy.simplify(W.subs(id_gains))
+  C_no_jones = sympy.simplify(C.subs(id_jones))
+  W_no_jones = sympy.simplify(W.subs(id_jones))
 
-  return schema, C, W, C_no_gains, W_no_gains
+  return schema, C, W, C_no_jones, W_no_jones
 
 
 def subs_sympy(expr: sympy.Expr) -> str:
@@ -134,42 +134,42 @@ def generate_expression(args: Namespace):
     conv_fns: Dict[Tuple[str, str, str, str], str] = {}
 
     for pol_type in POLARISATION_TYPES:
-      stokes_schema, coh_gains, wgt_gains, coh_nogains, wgt_nogains = sympy_expressions(
+      stokes_schema, coh_jones, wgt_jones, coh_nojones, wgt_nojones = sympy_expressions(
         pol_type
       )
-      assert coh_gains.shape == coh_nogains.shape == (len(stokes_schema), 1)
-      assert wgt_gains.shape == wgt_nogains.shape == (len(stokes_schema), 1)
+      assert coh_jones.shape == coh_nojones.shape == (len(stokes_schema), 1)
+      assert wgt_jones.shape == wgt_nojones.shape == (len(stokes_schema), 1)
 
-      for stokes, coh_gains in zip(stokes_schema, coh_gains):
-        fn_name = f"{pol_type.upper()}_VIS_GAINS_{stokes.upper()}"
-        key = ("VIS", pol_type.upper(), "GAINS", stokes.upper())
+      for stokes, coh_jones in zip(stokes_schema, coh_jones):
+        fn_name = f"{pol_type.upper()}_VIS_JONES_{stokes.upper()}"
+        key = ("VIS", pol_type.upper(), "JONES", stokes.upper())
         conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(VIS_FN_ARGUMENTS)}):\n")
-        f.write(f"  return {subs_sympy(coh_gains)}\n")
+        f.write(f"  return {subs_sympy(coh_jones)}\n")
         f.write("\n")
 
-      for stokes, wgt_gains in zip(stokes_schema, wgt_gains):
-        fn_name = f"{pol_type.upper()}_WEIGHT_GAINS_{stokes.upper()}"
-        key = ("WEIGHT", pol_type.upper(), "GAINS", stokes.upper())
+      for stokes, wgt_jones in zip(stokes_schema, wgt_jones):
+        fn_name = f"{pol_type.upper()}_WEIGHT_JONES_{stokes.upper()}"
+        key = ("WEIGHT", pol_type.upper(), "JONES", stokes.upper())
         conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(WEIGHT_FN_ARGUMENTS)}):\n")
-        f.write(f"  return ({subs_sympy(wgt_gains)}).real\n")
+        f.write(f"  return ({subs_sympy(wgt_jones)}).real\n")
         f.write("\n")
 
-      for stokes, coh_nogains in zip(stokes_schema, coh_nogains):
-        fn_name = f"{pol_type.upper()}_VIS_NOGAINS_{stokes.upper()}"
-        key = ("VIS", pol_type.upper(), "NOGAINS", stokes.upper())
+      for stokes, coh_nojones in zip(stokes_schema, coh_nojones):
+        fn_name = f"{pol_type.upper()}_VIS_NOJONES_{stokes.upper()}"
+        key = ("VIS", pol_type.upper(), "NOJONES", stokes.upper())
         conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(VIS_ARGUMENTS)}):\n")
-        f.write(f"  return {subs_sympy(coh_nogains)}\n")
+        f.write(f"  return {subs_sympy(coh_nojones)}\n")
         f.write("\n")
 
-      for stokes, wgt_nogains in zip(stokes_schema, wgt_nogains):
-        fn_name = f"{pol_type.upper()}_WEIGHT_NOGAINS_{stokes.upper()}"
-        key = ("WEIGHT", pol_type.upper(), "NOGAINS", stokes.upper())
+      for stokes, wgt_nojones in zip(stokes_schema, wgt_nojones):
+        fn_name = f"{pol_type.upper()}_WEIGHT_NOJONES_{stokes.upper()}"
+        key = ("WEIGHT", pol_type.upper(), "NOJONES", stokes.upper())
         conv_fns[key] = fn_name
         f.write(f"def {fn_name}({', '.join(WEIGHT_ARGUMENTS)}):\n")
-        f.write(f"  return ({subs_sympy(wgt_nogains)}).real\n")
+        f.write(f"  return ({subs_sympy(wgt_nojones)}).real\n")
         f.write("\n")
 
     f.write("CONVERT_FNS = {\n")

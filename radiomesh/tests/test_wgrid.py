@@ -4,7 +4,7 @@ import pytest
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.core import grid_data
 from radiomesh.gridding import WGridderParameters, wgrid
-from radiomesh.literals import Datum
+from radiomesh.literals import Datum, Schema
 from radiomesh.stokes import stokes_funcs
 from radiomesh.utils import image_params, wgridder_conventions
 
@@ -46,7 +46,8 @@ def test_numba_wgrid(nx, ny, fov, oversampling, apply_jones):
     pixsizex,
     pixsizey,
     2e-13,
-    schema="[XX,XY,YX,YY] -> [I,Q,U,V]",
+    pol_schema=Schema(("XX", "XY", "YX", "YY")),
+    stokes_schema=Schema(("I", "Q", "U", "V")),
   )
 
   ndir = 1
@@ -55,7 +56,7 @@ def test_numba_wgrid(nx, ny, fov, oversampling, apply_jones):
   jones[..., -1] = 1.0 + 0j
   if apply_jones:
     jones += 0.05 * (rng.normal(size=jones.shape) + 1j * rng.normal(size=jones.shape))
-    jones_params = (jones, antenna_pairs)
+    jones_params = (jones, antenna_pairs, wgrid_params.pol_schema)
   else:
     jones_params = None
 

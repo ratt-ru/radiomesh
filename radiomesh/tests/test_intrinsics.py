@@ -121,9 +121,9 @@ def test_intrinsic_caching():
 
 def test_none_type_intrinsic():
   @intrinsic
-  def fintrinsic(typingctx, data, gains):
-    sig = types.none(data, gains)
-    print(sig, gains == types.none)
+  def fintrinsic(typingctx, data, jones):
+    sig = types.none(data, jones)
+    print(sig, jones == types.none)
 
     def codegen(context, builder, signature, args):
       return None

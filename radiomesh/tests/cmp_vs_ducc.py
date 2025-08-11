@@ -3,9 +3,8 @@ import time
 
 import numpy as np
 
-from radiomesh.es_kernel import ESKernel
 from radiomesh.gridding import WGridderParameters, wgrid
-from radiomesh.literals import Datum
+from radiomesh.literals import Datum, Schema
 from radiomesh.utils import image_params
 
 
@@ -108,11 +107,14 @@ if __name__ == "__main__":
     wgt = wgt.reshape((ntime, -1) + wgt.shape[1:])
     flags = flags.reshape((ntime, -1) + flags.shape[1:])
 
-    kernel = ESKernel(epsilon)
-    print(kernel)
-
     wgrid_params = WGridderParameters(
-      nx, ny, pixsizex, pixsizey, kernel, "[XX,XY,YX,YY] -> [I,Q,U,V]"
+      nx,
+      ny,
+      pixsizex,
+      pixsizey,
+      epsilon,
+      Schema(("XX", "XY", "YX", "YY")),
+      Schema(("I", "Q", "U", "V")),
     )
 
     ntime, nbl, nchan, ncorr = vis.shape

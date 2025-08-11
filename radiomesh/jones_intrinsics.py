@@ -6,15 +6,14 @@ from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import overload
 
 from radiomesh.intrinsics import load_data
-from radiomesh.literals import Datum, DatumLiteral
+from radiomesh.literals import DatumLiteral, SchemaLiteral
 from radiomesh.stokes_intrinsics import data_conv_fn
 
 
 @dataclass(slots=True, unsafe_hash=True, eq=True)
-class ApplyJonesParameters:
+class ApplyJones:
   data_type: Literal["vis", "weight"]
   pol_schema: Tuple[str, ...]
-  gain_schema: Tuple[str, ...]
   stokes_schema: Tuple[str, ...]
 
 
@@ -36,16 +35,6 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
 
   HAVE_JONES_PARAMS = jones_params != types.none
 
-  if HAVE_JONES_PARAMS and (
-    not isinstance(jones_params, types.Tuple)
-    or len(jones_params) != 2
-    or not all(isinstance(jp, types.Array) for jp in jones_params)
-  ):
-    raise TypingError(
-      f"'jones_params' {jones_params} must be None "
-      f"or a (jones, antenna_pairs) tuple of arrays"
-    )
-
   if not isinstance(data, types.UniTuple):
     raise TypingError(f"'data' {data} must be a UniTuple")
 
@@ -58,33 +47,50 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
 
   apply_jones_params = apply_jones_literal.datum_value
   DATA_TYPE = apply_jones_params.data_type
-  POL_SCHEMA_DATUM = Datum(apply_jones_params.pol_schema)
-  GAIN_SCHEMA_DATUM = Datum(apply_jones_params.gain_schema)
-  STOKES_SCHEMA_DATUM = Datum(apply_jones_params.stokes_schema)
-  NGAIN = len(GAIN_SCHEMA_DATUM.value)
+  POL_SCHEMA = apply_jones_params.pol_schema
+  STOKES_SCHEMA = apply_jones_params.stokes_schema
 
-  def impl(apply_jones_literal, jones_params, data, idx):
-    if HAVE_JONES_PARAMS:
+  if not HAVE_JONES_PARAMS:
+    # Simple case
+
+    def impl(apply_jones_literal, jones_params, data, idx):
+      return data_conv_fn(data, None, None, DATA_TYPE, POL_SCHEMA, STOKES_SCHEMA, None)
+  else:
+    # Load in the jones term associated
+    # with each baseline's antenna pair
+    # and apply them to the data
+    if (
+      not isinstance(jones_params, types.Tuple)
+      or len(jones_params) != 3
+      or not all(
+        isinstance(jp, types.Array)
+        for jp in jones_params[:2] or not isinstance(jones_params[2], SchemaLiteral)
+      )
+    ):
+      raise TypingError(
+        f"'jones_params' {jones_params} must be None "
+        f"or a (jones, antenna_pairs, schema) tuple of "
+        f"types (Array, Array, Schema)"
+      )
+
+    JONES_SCHEMA = jones_params[2].literal_value
+    NJONES = len(JONES_SCHEMA)
+
+    def impl(apply_jones_literal, jones_params, data, idx):
       t, bl, ch = idx
-      jones, antenna_pairs = jones_params
+      jones, antenna_pairs, _ = jones_params
       a1 = antenna_pairs[bl, 0]
       a2 = antenna_pairs[bl, 1]
-      j1 = load_data(jones, (t, a1, ch, 0), NGAIN, -1)
-      j2 = load_data(jones, (t, a2, ch, 0), NGAIN, -1)
-      GAIN_SCHEMA_DATUM_ACTUAL = GAIN_SCHEMA_DATUM
-    else:
-      j1 = None
-      j2 = None
-      GAIN_SCHEMA_DATUM_ACTUAL = None
-
-    return data_conv_fn(
-      data,
-      j1,
-      j2,
-      DATA_TYPE,
-      POL_SCHEMA_DATUM,
-      GAIN_SCHEMA_DATUM_ACTUAL,
-      STOKES_SCHEMA_DATUM,
-    )
+      j1 = load_data(jones, (t, a1, ch, 0), NJONES, -1)
+      j2 = load_data(jones, (t, a2, ch, 0), NJONES, -1)
+      return data_conv_fn(
+        data,
+        j1,
+        j2,
+        DATA_TYPE,
+        POL_SCHEMA,
+        STOKES_SCHEMA,
+        JONES_SCHEMA,
+      )
 
   return impl

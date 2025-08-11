@@ -17,11 +17,11 @@ from radiomesh.intrinsics import (
   check_args,
   load_data,
 )
-from radiomesh.jones_intrinsics import ApplyJonesParameters, maybe_apply_jones
-from radiomesh.literals import Datum, DatumLiteral
+from radiomesh.jones_intrinsics import ApplyJones, maybe_apply_jones
+from radiomesh.literals import Datum, DatumLiteral, Schema
 from radiomesh.utils import wgridder_conventions
 
-JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": True, "fastmath": True}
+JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
 
 
 @dataclass(slots=True, eq=True, unsafe_hash=True)
@@ -31,17 +31,14 @@ class WGridderParameters:
   pixsizex: float
   pixsizey: float
   kernel: float | ESKernel
-  schema: str
+  pol_schema: Tuple[str, ...]
+  stokes_schema: Tuple[str, ...]
   apply_w: bool = True
   apply_fftshift: bool = True
 
   def __post_init__(self):
     if isinstance(self.kernel, float):
       self.kernel = ESKernel(epsilon=self.kernel, apply_w=self.apply_w)
-
-
-def parse_schema(schema: str) -> Tuple[str, ...]:
-  return tuple(s.strip().upper() for s in schema.lstrip("[ ").rstrip("] ").split(","))
 
 
 def wgrid_impl(
@@ -90,36 +87,13 @@ def wgrid_overload(
   ):
     raise TypingError(f"'flags' {flags} must be a Integer or Boolean Array")
 
-  HAVE_JONES_PARAMS = jones_params != types.none
-
-  if HAVE_JONES_PARAMS and (
-    not isinstance(jones_params, types.Tuple)
-    or len(jones_params) != 2
-    or not all(isinstance(jp, types.Array) for jp in jones_params)
-  ):
-    raise TypingError(
-      f"'jones_params' {jones_params} must be None "
-      f"or a (jones, antenna_pairs) tuple of arrays"
-    )
-
-  if not isinstance(wgrid_literal_params, DatumLiteral):
-    raise RequireLiteralValue(
-      f"'wgrid_literal_params' {wgrid_literal_params} is not a DatumLiteral"
-    )
-
-  if not isinstance(
+  if not isinstance(wgrid_literal_params, DatumLiteral) or not isinstance(
     (wgrid_params := wgrid_literal_params.datum_value), WGridderParameters
   ):
-    raise TypingError(
-      f"'wgrid_literal_params' {type(wgrid_params)} must be a WGridderParameters "
+    raise RequireLiteralValue(
+      f"'wgrid_literal_params' {wgrid_literal_params} "
+      f"is not a DatumLiteral[WGridderParameters]"
     )
-
-  try:
-    pol_str, stokes_str = wgrid_params.schema.split("->")
-  except ValueError as e:
-    raise ValueError(
-      f"{wgrid_params.schema} should be of the form " f"[XX,XY,YX,YY] -> [I,Q,U,V]"
-    ) from e
 
   # Currently this implementation only applies an fftshift
   if not (apply_fftshift := wgrid_params.apply_fftshift):
@@ -127,9 +101,9 @@ def wgrid_overload(
 
   KERNEL = Datum(wgrid_params.kernel)
   HALF_SUPPORT_INT = wgrid_params.kernel.half_support_int
-  POL_SCHEMA_DATUM = Datum(parse_schema(pol_str))
-  STOKES_SCHEMA_DATUM = Datum(parse_schema(stokes_str))
-  NSTOKES = len(STOKES_SCHEMA_DATUM.value)  # noqa
+  POL_SCHEMA_DATUM = Datum(wgrid_params.pol_schema)
+  STOKES_SCHEMA_DATUM = Datum(wgrid_params.stokes_schema)
+  NSTOKES = len(STOKES_SCHEMA_DATUM.value)
   NPOL = len(POL_SCHEMA_DATUM.value)
   NUVW = len(["U", "V", "W"])
 
@@ -140,17 +114,10 @@ def wgrid_overload(
   U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   JONES_VIS_DATUM = Datum(
-    ApplyJonesParameters(
-      "vis", POL_SCHEMA_DATUM.value, POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value
-    )
+    ApplyJones("vis", POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value)
   )
   JONES_WGT_DATUM = Datum(
-    ApplyJonesParameters(
-      "weight",
-      POL_SCHEMA_DATUM.value,
-      POL_SCHEMA_DATUM.value,
-      STOKES_SCHEMA_DATUM.value,
-    )
+    ApplyJones("weight", POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value)
   )
 
   def impl(
@@ -171,7 +138,7 @@ def wgrid_overload(
     weight_grid = np.zeros((NSTOKES, NX, NY), weights.dtype)
 
     vis_grid_view = vis_grid[:]
-    weight_grid_view = weight_grid[:]
+    # weight_grid_view = weight_grid[:]
 
     for t in numba.prange(ntime):
       for bl in range(nbl):
@@ -221,8 +188,8 @@ def wgrid_overload(
               yi = int(yfi)
               weighted_stokes = apply_weights(vis, pol_weight)
               accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), 0)
-              weighted_weights = apply_weights(wgt, pol_weight)
-              accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
+              # weighted_weights = apply_weights(wgt, pol_weight)
+              # accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
 
     return vis_grid, weight_grid
 
@@ -237,7 +204,7 @@ def wgrid(
   flags: npt.NDArray[np.integer],
   frequencies: npt.NDArray[np.floating],
   wgrid_literal_params: DatumLiteral[WGridderParameters],
-  jones_params: Tuple[npt.NDArray[np.complexfloating], npt.NDArray[np.integer]]
+  jones_params: Tuple[npt.NDArray[np.complexfloating], npt.NDArray[np.integer], Schema]
   | None = None,
 ) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
   return wgrid_impl(
