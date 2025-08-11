@@ -3,7 +3,6 @@ import pytest
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.core import grid_data
-from radiomesh.es_kernel import ESKernel
 from radiomesh.gridding import WGridderParameters, wgrid
 from radiomesh.literals import Datum
 from radiomesh.stokes import stokes_funcs
@@ -42,7 +41,12 @@ def test_numba_wgrid(nx, ny, fov, oversampling, apply_jones):
   nx, ny, pixsizex, pixsizey = image_params(uvw, freqs, fov, oversampling)
 
   wgrid_params = WGridderParameters(
-    nx, ny, pixsizex, pixsizey, ESKernel(2e-13), schema="[XX,XY,YX,YY] -> [I,Q,U,V]"
+    nx,
+    ny,
+    pixsizex,
+    pixsizey,
+    2e-13,
+    schema="[XX,XY,YX,YY] -> [I,Q,U,V]",
   )
 
   ndir = 1

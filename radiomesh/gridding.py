@@ -30,10 +30,14 @@ class WGridderParameters:
   ny: int
   pixsizex: float
   pixsizey: float
-  kernel: ESKernel
+  kernel: float | ESKernel
   schema: str
   apply_w: bool = True
   apply_fftshift: bool = True
+
+  def __post_init__(self):
+    if isinstance(self.kernel, float):
+      self.kernel = ESKernel(epsilon=self.kernel, apply_w=self.apply_w)
 
 
 def parse_schema(schema: str) -> Tuple[str, ...]:
