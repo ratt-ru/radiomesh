@@ -45,7 +45,7 @@ def test_numba_wgrid(nx, ny, fov, oversampling, apply_jones):
     ny,
     pixsizex,
     pixsizey,
-    2e-13,
+    1e-4,
     pol_schema=Schema(("XX", "XY", "YX", "YY")),
     stokes_schema=Schema(("I", "Q", "U", "V")),
   )
