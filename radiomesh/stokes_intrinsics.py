@@ -7,7 +7,7 @@ from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import intrinsic
 
 from radiomesh._stokes_expr import CONVERT_FNS
-from radiomesh.literals import DatumLiteral
+from radiomesh.literals import SchemaLiteral
 
 LINEAR_POLS = ("XX", "XY", "YX", "YY")
 CIRCULAR_POLS = ("RR", "RL", "LR", "LL")
@@ -56,17 +56,17 @@ def schema_pol_type(schema_type: str, pol_schema: Tuple[str, ...]) -> str:
 
 
 def data_source_maps(
-  data_type: str, data_schema: Tuple[str, ...], gain_schema: Tuple[str, ...]
+  data_type: str, data_schema: Tuple[str, ...], jones_schema: Tuple[str, ...]
 ) -> Tuple[Dict[str, Tuple[DataSource, Any]], Dict[str, Tuple[DataSource, Any]]]:
-  """Identify data sources for the data and gains for all polarisations.
+  """Identify data sources for the data and jones for all polarisations.
 
-  Indices from the data and gains schemas are preferred,
+  Indices from the data and jones schemas are preferred,
   otherwise default values are provided.
 
   llvmlite creates complex constants from tuples of reals.
   """
   data_source: Dict[str, Tuple[DataSource, Any]] = {}
-  gain_source: Dict[str, Tuple[DataSource, Any]] = {}
+  jones_source: Dict[str, Tuple[DataSource, Any]] = {}
 
   for pol in ALL_POLS:
     try:
@@ -75,12 +75,12 @@ def data_source_maps(
       data_source[pol] = (DataSource.Default, (0, 0) if data_type == "vis" else 0)
 
     try:
-      gain_source[pol] = (DataSource.Index, gain_schema.index(pol))
+      jones_source[pol] = (DataSource.Index, jones_schema.index(pol))
     except ValueError:
       # Fill in identity matrix
-      gain_source[pol] = (DataSource.Default, (1, 0) if pol in DIAGONALS else (0, 0))
+      jones_source[pol] = (DataSource.Default, (1, 0) if pol in DIAGONALS else (0, 0))
 
-  return data_source, gain_source
+  return data_source, jones_source
 
 
 def check_stokes_datasources(stokes_schema, data_schema, data_source_map):
@@ -116,18 +116,18 @@ def check_stokes_datasources(stokes_schema, data_schema, data_source_map):
 def data_conv_fn(
   typingctx,
   data: types.UniTuple,
-  gains_p: types.UniTuple | types.NoneType,
-  gains_q: types.UniTuple | types.NoneType,
+  jones_p: types.UniTuple | types.NoneType,
+  jones_q: types.UniTuple | types.NoneType,
   data_type_literal: types.StringLiteral,
-  data_schema_literal: DatumLiteral[Tuple[str, ...]],
-  gain_schema_literal: DatumLiteral[Tuple[str, ...]] | types.NoneType,
-  stokes_schema_literal: DatumLiteral[Tuple[str, ...]],
+  data_schema_literal: SchemaLiteral,
+  stokes_schema_literal: SchemaLiteral,
+  jones_schema_literal: SchemaLiteral | types.NoneType,
 ):
   # Verify arguments
-  have_gains = (
-    gains_p != types.none
-    and gains_q != types.none
-    and gain_schema_literal != types.none
+  have_jones = (
+    jones_p != types.none
+    and jones_q != types.none
+    and jones_schema_literal != types.none
   )
 
   if not isinstance(data_type_literal, types.StringLiteral) or (
@@ -138,25 +138,25 @@ def data_conv_fn(
       f"equal to 'vis' or 'weight'"
     )
 
-  if not isinstance(data_schema_literal, DatumLiteral):
+  if not isinstance(data_schema_literal, SchemaLiteral):
     raise RequireLiteralValue(
-      f"'data_schema_literal' {data_schema_literal} must be a DatumLiteral"
+      f"'data_schema_literal' {data_schema_literal} must be a SchemaLiteral"
     )
 
-  if have_gains and not isinstance(gain_schema_literal, DatumLiteral):
+  if not isinstance(stokes_schema_literal, SchemaLiteral):
     raise RequireLiteralValue(
-      f"'gain_schema_literal' {gain_schema_literal} must be a DatumLiteral"
+      f"'stokes_schema_literal' {stokes_schema_literal} must be a SchemaLiteral"
     )
 
-  if not isinstance(stokes_schema_literal, DatumLiteral):
+  if have_jones and not isinstance(jones_schema_literal, SchemaLiteral):
     raise RequireLiteralValue(
-      f"'stokes_schema_literal' {stokes_schema_literal} must be a DatumLiteral"
+      f"'jones_schema_literal' {jones_schema_literal} must be a SchemaLiteral"
     )
 
-  data_schema = tuple(v.upper() for v in data_schema_literal.datum_value)
-  stokes_schema = tuple(s.upper() for s in stokes_schema_literal.datum_value)
-  gain_schema = (
-    tuple(g.upper() for g in gain_schema_literal.datum_value) if have_gains else ()
+  data_schema = tuple(v.upper() for v in data_schema_literal.literal_value)
+  stokes_schema = tuple(s.upper() for s in stokes_schema_literal.literal_value)
+  jones_schema = (
+    tuple(g.upper() for g in jones_schema_literal.literal_value) if have_jones else ()
   )
 
   if (
@@ -169,40 +169,40 @@ def data_conv_fn(
       f"of len({data_schema}) == {len(data_schema)}"
     )
 
-  if have_gains:
+  if have_jones:
     if (
-      not isinstance(gains_p, types.UniTuple)
-      or not isinstance(gains_p.dtype, types.Complex)
-      or len(gains_p) != len(gain_schema)
+      not isinstance(jones_p, types.UniTuple)
+      or not isinstance(jones_p.dtype, types.Complex)
+      or len(jones_p) != len(jones_schema)
     ):
       raise TypingError(
-        f"'gains_p' {gains_p} must be a tuple of complex values "
-        f"of len({gain_schema}) == {len(gain_schema)}"
+        f"'jones_p' {jones_p} must be a tuple of complex values "
+        f"of len({jones_schema}) == {len(jones_schema)}"
       )
 
     if (
-      not isinstance(gains_q, types.UniTuple)
-      or not isinstance(gains_q.dtype, types.Complex)
-      or len(gains_q) != len(gain_schema)
+      not isinstance(jones_q, types.UniTuple)
+      or not isinstance(jones_q.dtype, types.Complex)
+      or len(jones_q) != len(jones_schema)
     ):
       raise TypingError(
-        f"'gains_q' {gains_q} must be a tuple of complex values "
-        f"of len({gain_schema}) == {len(gain_schema)}"
+        f"'jones_q' {jones_q} must be a tuple of complex values "
+        f"of len({jones_schema}) == {len(jones_schema)}"
       )
 
   data_pol_type = schema_pol_type("Visibility", data_schema)
 
-  if have_gains and data_pol_type != (
-    gain_pol_type := schema_pol_type("Gain", gain_schema)
+  if have_jones and data_pol_type != (
+    jones_pol_type := schema_pol_type("Jones", jones_schema)
   ):
     raise ValueError(
       f"Visibility polarisation type {data_pol_type.lower()} ({data_schema}) "
       f"does not match the "
-      f"gain polarisation type {gain_pol_type.lower()} ({gain_schema})"
+      f"jones polarisation type {jones_pol_type.lower()} ({jones_schema})"
     )
 
-  data_source_map, gain_source_map = data_source_maps(
-    data_type, data_schema, gain_schema
+  data_source_map, jones_source_map = data_source_maps(
+    data_type, data_schema, jones_schema
   )
   check_stokes_datasources(stokes_schema, data_schema, data_source_map)
 
@@ -210,35 +210,35 @@ def data_conv_fn(
   base_key = (
     data_type.upper(),
     data_pol_type.upper(),
-    "GAINS" if have_gains else "NOGAINS",
+    "JONES" if have_jones else "NOJONES",
   )
 
   return_type = types.Tuple([data.dtype] * len(stokes_schema))
   sig = return_type(
     data,
-    gains_p,
-    gains_q,
+    jones_p,
+    jones_q,
     data_type_literal,
     data_schema_literal,
-    gain_schema_literal,
     stokes_schema_literal,
+    jones_schema_literal,
   )
 
   def codegen(context, builder, signature, args):
-    data, gains_p, gains_q, _, _, _, _ = args
-    data_type, gains_p_type, gains_q_type, _, _, _, _ = signature.args
+    data, jones_p, jones_q, _, _, _, _ = args
+    data_type, jones_p_type, jones_q_type, _, _, _, _ = signature.args
     llvm_data_type = context.get_value_type(data_type.dtype)
 
     # Build conversion function arguments and argument types
-    # When gains are present 12 arguments are needed
-    # (4*vis/weight, 4*gain_p, 4*gain_q)
+    # When jones are present 12 arguments are needed
+    # (4*vis/weight, 4*jones_p, 4*jones_q)
     # otherwise they only take the 4 visibilities/weights
     fn_args = []
     fn_arg_types = []
 
     # Conversion functions need all four polarisations for
-    # data and both sets of gains (if gains are present)
-    # Prefer extraction from data/gains, else use defaults
+    # data and both sets of jones (if jones are present)
+    # Prefer extraction from data/jones, else use defaults
     data_pols = LINEAR_POLS if data_pol_type == "LINEAR" else CIRCULAR_POLS
 
     # Extract visibility arguments and types
@@ -254,36 +254,36 @@ def data_conv_fn(
       fn_args.append(arg_value)
       fn_arg_types.append(data_type.dtype)
 
-    if have_gains:
-      gain_pols = LINEAR_POLS if gain_pol_type == "LINEAR" else CIRCULAR_POLS
-      llvm_gains_p_type = context.get_value_type(gains_p_type.dtype)
-      llvm_gains_q_type = context.get_value_type(gains_q_type.dtype)
+    if have_jones:
+      jones_pols = LINEAR_POLS if jones_pol_type == "LINEAR" else CIRCULAR_POLS
+      llvm_jones_p_type = context.get_value_type(jones_p_type.dtype)
+      llvm_jones_q_Type = context.get_value_type(jones_q_type.dtype)
 
-      # Extract gain p arguments and types
-      for pol in gain_pols:
-        src_type, src_value = gain_source_map[pol]
+      # Extract jones p arguments and types
+      for pol in jones_pols:
+        src_type, src_value = jones_source_map[pol]
         if src_type is DataSource.Index:
-          arg_value = builder.extract_value(gains_p, src_value)
+          arg_value = builder.extract_value(jones_p, src_value)
         elif src_type is DataSource.Default:
-          arg_value = ir.Constant(llvm_gains_p_type, src_value)
+          arg_value = ir.Constant(llvm_jones_p_type, src_value)
         else:
           raise ValueError(f"Unhandled DataSource type {src_type}")
 
         fn_args.append(arg_value)
-        fn_arg_types.append(gains_p_type.dtype)
+        fn_arg_types.append(jones_p_type.dtype)
 
-      # Extract gain q arguments and types
-      for pol in gain_pols:
-        src_type, src_value = gain_source_map[pol]
+      # Extract jones q arguments and types
+      for pol in jones_pols:
+        src_type, src_value = jones_source_map[pol]
         if src_type is DataSource.Index:
-          arg_value = builder.extract_value(gains_q, src_value)
+          arg_value = builder.extract_value(jones_q, src_value)
         elif src_type is DataSource.Default:
-          arg_value = ir.Constant(llvm_gains_q_type, src_value)
+          arg_value = ir.Constant(llvm_jones_q_Type, src_value)
         else:
           raise ValueError(f"Unhandled DataSource type {src_type}")
 
         fn_args.append(arg_value)
-        fn_arg_types.append(gains_q_type.dtype)
+        fn_arg_types.append(jones_q_type.dtype)
 
     # Signature is the same for all stokes parameters
     conv_fn_sig = data_type.dtype(*fn_arg_types)

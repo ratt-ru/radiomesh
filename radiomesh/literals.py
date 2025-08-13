@@ -10,6 +10,47 @@ from numba.extending import (
   unbox,
 )
 
+
+class Schema(tuple):
+  """An extension of tuple that exists primarily to
+  represent sequences of stokes/polarisations.
+
+  This creates a unique type that numba can pass as a
+  literal argument within numba functions"""
+
+  pass
+
+
+class SchemaLiteral(types.Literal, types.Dummy):
+  """Literal type associated with Schema"""
+
+  def __reduce__(self):
+    return (SchemaLiteral, (self.literal_value,))
+
+
+@unbox(SchemaLiteral)
+def unbox_schema_literal(typ, obj, c):
+  """Convert a Python SchemaLiteral to a Numba representation
+  Here we can just the Python SchemaLiteral itself"""
+  return NativeValue(c.context.get_dummy_value())
+
+
+@typeof_impl.register(Schema)
+def typeof_schema(val, c):
+  """This is sufficient to use Schema within a numba.njit function"""
+  return SchemaLiteral(val)
+
+
+# SchemaLiteral is only implemented as a simple Literal and Dummy type
+# in order to pass arbitrary Python objects through overload and intrinsic constructs.
+# It's functionality is minimally exposed within the numba layer so we
+# only register it with an OpaqueModel.
+register_default(SchemaLiteral)(OpaqueModel)
+
+# This ensures numba.literally(Schema(...)) produces a SchemaLiteral
+types.Literal.ctor_map[Schema] = SchemaLiteral
+
+
 H = TypeVar("H", bound=Hashable)
 
 
@@ -82,7 +123,7 @@ def unbox_datum_literal(typ, obj, c):
 
 
 @typeof_impl.register(Datum)
-def typeof_index(val, c):
+def typeof_datum(val, c):
   """This is sufficient to use Datum within a numba.njit function"""
   return DatumLiteral(val)
 

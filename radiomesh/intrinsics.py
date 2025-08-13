@@ -154,32 +154,25 @@ def accumulate_data(
   data: types.UniTuple,
   array: types.Array,
   index: types.UniTuple,
-  ndata: types.IntegerLiteral,
   axis: types.IntegerLiteral,
 ) -> Tuple[Signature, Callable]:
-  """An intrinsic that accumulates an `ndata` tuple of values
-  in an array at a given `axis` and `index`:
+  """An intrinsic that accumulates a `data` tuple of values
+  into an array at a given `axis` and `index`:
 
   .. code-block:: python
 
-    assert array.shape[axis] == ndata
-    assert len(data_tuple) == ndata
+    assert len(data_tuple) == array.shape[axis]
     array[index[:axis] + (Ellipsis,) + index[axis:]] += data_tuple
 
   `index` should be a tuple of array.ndim - 1 integer values.
   `axis` references the dimension not referenced by `index` and
   should be of length ndata.
   """
-  if not isinstance(ndata, types.IntegerLiteral):
-    raise RequireLiteralValue(f"'ndata' ({ndata}) must be an IntegerLiteral")
-
   if not isinstance(axis, types.IntegerLiteral):
     raise RequireLiteralValue(f"'axis' ({axis}) must be an IntegerLiteral")
 
-  if not isinstance(data, types.UniTuple) or len(data) != ndata.literal_value:
-    raise TypingError(
-      f"'data' ({data}) should be a tuple of length {ndata.literal_value}"
-    )
+  if not isinstance(data, types.UniTuple):
+    raise TypingError(f"'data' ({data}) should be a tuple")
 
   if not isinstance(array, types.Array) or array.ndim != len(index) + 1:
     raise TypingError(f"'array' ({array}) should be a {len(index) + 1}D array")
@@ -189,9 +182,9 @@ def accumulate_data(
   ):
     raise TypingError(f"'index' {index} must be a tuple of integers")
 
-  sig = types.none(data, array, index, ndata, axis)
+  sig = types.none(data, array, index, axis)
   # -1 signifies the axis should be at the end of the tuple
-  ax = ndata.literal_value if axis.literal_value < 0 else axis.literal_value
+  ax = len(data) if axis.literal_value < 0 else axis.literal_value
 
   def assign_factory(pol):
     """Index array with the N-1 indices combined with pol"""
@@ -202,11 +195,11 @@ def accumulate_data(
     return assign
 
   def codegen(context, builder, signature, args):
-    data, array, index, _, _ = args
-    data_type, array_type, index_type, _, _ = signature.args
+    data, array, index, _ = args
+    data_type, array_type, index_type, _ = signature.args
     sig = types.none(data_type, array_type, index_type)
 
-    for p in range(ndata.literal_value):
+    for p in range(len(data_type)):
       context.compile_internal(builder, assign_factory(p), sig, [data, array, index])
 
     return None
