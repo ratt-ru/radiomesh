@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.core import wgrid_data
+from radiomesh.core import grid_data, wgrid_data
 from radiomesh.es_kernel import ESKernel
 from radiomesh.gridding import WGridderParameters, wgrid
 from radiomesh.literals import Datum, Schema
@@ -14,8 +14,9 @@ from radiomesh.utils import image_params, wgridder_conventions
 @pytest.mark.parametrize("fov", [50.0])
 @pytest.mark.parametrize("oversampling", [2])
 @pytest.mark.parametrize("epsilon", [2e-13])
+@pytest.mark.parametrize("apply_w", [True, False])
 @pytest.mark.parametrize("apply_jones", [True, False])
-def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
+def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
   """Smoke test. Call with NUMBA_DEBUG_CACHE=1 to ensure caching works"""
   rng = np.random.default_rng(42)
 
@@ -38,12 +39,11 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
   weights = rng.random(shape)
   flags = np.zeros_like(weights, np.uint8)
 
-  kernel = ESKernel(epsilon, apply_w=True, oversampling=oversampling)
+  kernel = ESKernel(epsilon, apply_w=apply_w, oversampling=oversampling)
   kernel.support = 10
 
   # Now recompute these params
-  nx, ny, _, pixsizex, pixsizey, w0, dw = image_params(uvw, freqs, fov, kernel)
-  nw = 11
+  nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freqs, fov, kernel)
 
   wgrid_params = WGridderParameters(
     nx,
@@ -56,6 +56,7 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
     kernel,
     pol_schema=Schema(("XX", "XY", "YX", "YY")),
     stokes_schema=Schema(("I", "Q", "U", "V")),
+    apply_w=apply_w,
   )
 
   ndir = 1
@@ -70,7 +71,9 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
 
   vis_grid = wgrid(uvw, vis, weights, flags, freqs, Datum(wgrid_params), jones_params)
 
-  assert vis_grid.shape == (4, nw, nx, ny)
+  expected_shape = (len(wgrid_params.stokes_schema),)
+  expected_shape += ((nw,) if apply_w else ()) + (nx, ny)
+  assert vis_grid.shape == expected_shape
   assert vis_grid.dtype == vis.dtype
 
   # stokes_func wants a matrix form for jones
@@ -80,55 +83,54 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
   vis_func, wgt_func = stokes_funcs(jones, "IQUV", "linear", npol)
   usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
 
-  print("wgridding")
-
-  result = wgrid_data(
-    uvw,
-    freqs,
-    vis,
-    weights,
-    flags,
-    jones,
-    ant1,
-    ant2,
-    wgrid_params.nx,
-    wgrid_params.ny,
-    wgrid_params.pixsizex,
-    wgrid_params.pixsizey,
-    npol,
-    vis_func,
-    wgt_func,
-    w0,
-    dw,
-    nw,
-    wgrid_params.kernel.support,
-    wgrid_params.kernel.beta,
-    wgrid_params.kernel.mu,
-    usign,
-    vsign,
-  )
-
-  # result = grid_data(
-  #   uvw,
-  #   freqs,
-  #   vis,
-  #   weights,
-  #   flags,
-  #   jones,
-  #   ant1,
-  #   ant2,
-  #   wgrid_params.nx,
-  #   wgrid_params.ny,
-  #   wgrid_params.pixsizex,
-  #   wgrid_params.pixsizey,
-  #   npol,
-  #   vis_func,
-  #   wgt_func,
-  #   alpha=wgrid_params.kernel.support,
-  #   beta=wgrid_params.kernel.beta,
-  #   mu=wgrid_params.kernel.mu,
-  #   usign=usign,
-  #   vsign=vsign,
-  # )
+  if apply_w:
+    result = wgrid_data(
+      uvw,
+      freqs,
+      vis,
+      weights,
+      flags,
+      jones,
+      ant1,
+      ant2,
+      wgrid_params.nx,
+      wgrid_params.ny,
+      wgrid_params.pixsizex,
+      wgrid_params.pixsizey,
+      npol,
+      vis_func,
+      wgt_func,
+      w0,
+      dw,
+      nw,
+      wgrid_params.kernel.support,
+      wgrid_params.kernel.beta,
+      wgrid_params.kernel.mu,
+      usign,
+      vsign,
+    )
+  else:
+    result = grid_data(
+      uvw,
+      freqs,
+      vis,
+      weights,
+      flags,
+      jones,
+      ant1,
+      ant2,
+      wgrid_params.nx,
+      wgrid_params.ny,
+      wgrid_params.pixsizex,
+      wgrid_params.pixsizey,
+      npol,
+      vis_func,
+      wgt_func,
+      alpha=wgrid_params.kernel.support,
+      beta=wgrid_params.kernel.beta,
+      mu=wgrid_params.kernel.mu,
+      usign=usign,
+      vsign=vsign,
+    )
 
   np.testing.assert_allclose(vis_grid, result)
