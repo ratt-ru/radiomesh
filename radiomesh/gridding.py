@@ -33,7 +33,7 @@ def maybe_conjugate(u, v, w, vis):
     w = -w
 
     for v, value in enumerate(numba.literal_unroll(vis)):
-      vis = tuple_setitem(vis, v, np.conj(v))
+      vis = tuple_setitem(vis, v, np.conj(value))
 
   return u, v, w, vis
 
@@ -218,7 +218,7 @@ def wgrid_overload(
               for yfi, yk in zip(
                 numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
               ):
-                pol_weight = xk * yk
+                pol_weight = xk * yk * zk
                 yi = int(yfi)
                 weighted_stokes = apply_weights(vis, pol_weight)
                 accumulate_data(weighted_stokes, vis_grid_view, (zi, xi, yi), 0)
@@ -230,7 +230,7 @@ def wgrid_overload(
   return impl
 
 
-@numba.njit(**{**JIT_OPTIONS, "parallel": False})
+@numba.njit(**{**JIT_OPTIONS, "parallel": False, "boundscheck": True})
 def wgrid(
   uvw: npt.NDArray[np.floating],
   visibilities: npt.NDArray[np.complexfloating],

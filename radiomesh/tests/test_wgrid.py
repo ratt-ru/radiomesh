@@ -83,6 +83,8 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
   vis_func, wgt_func = stokes_funcs(jones, "IQUV", "linear", npol)
   usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
 
+  print("wgridding")
+
   result = wgrid_data(
     uvw,
     freqs,

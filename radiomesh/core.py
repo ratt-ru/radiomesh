@@ -309,7 +309,9 @@ def wgrid_data(
         y = (pos - vg + yle) / half_supp
         _es_kernel(y, ykern, betak, mu)
 
-        z_idx = zle + pos
+        # NOTE: The modulo nw was added to prevent OOB errors,
+        # but it may not produce the desired result
+        z_idx = (zle + pos) % nw
         z = (pos - wg + zle) / half_supp
         # This is the same as
         # z_idx = np.arange(nw)
