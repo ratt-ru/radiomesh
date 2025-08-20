@@ -40,7 +40,6 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
   flags = np.zeros_like(weights, np.uint8)
 
   kernel = ESKernel(epsilon, apply_w=apply_w, oversampling=oversampling)
-  kernel.support = 10
 
   # Now recompute these params
   nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freqs, fov, kernel)
