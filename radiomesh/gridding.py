@@ -186,8 +186,8 @@ def wgrid_overload(
 
           # Tuple of indices associated with each kernel value in X, Y and Z
           # Of length kernel.support
-          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start)
-          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start, True)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start, True)
 
           # Tuples of kernel values of length kernel.support
           x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
@@ -261,9 +261,9 @@ def wgrid_overload(
 
           # Tuple of indices associated with each kernel value in X, Y and Z
           # Of length kernel.support
-          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start)
-          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
-          z_indices = es_kernel_positions(KERNEL, NW, w_pixel_start)
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start, True)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start, True)
+          z_indices = es_kernel_positions(KERNEL, NW, w_pixel_start, False)
 
           # Tuples of kernel values of length kernel.support
           x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
