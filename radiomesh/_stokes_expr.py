@@ -5,415 +5,415 @@
 from numpy import conjugate as conj
 
 
-def LINEAR_VIS_GAINS_I(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def LINEAR_VIS_JONES_I(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
     0.5
     * (
-      -gp00 * v01 * conj(gq01)
-      + gp00 * v11 * conj(gq00)
-      + gp01 * v00 * conj(gq01)
-      - gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
-      + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      -jp00 * v10 * conj(jq10)
+      + jp00 * v11 * conj(jq00)
+      - jp01 * v10 * conj(jq11)
+      + jp01 * v11 * conj(jq01)
+      + jp10 * v00 * conj(jq10)
+      - jp10 * v01 * conj(jq00)
+      + jp11 * v00 * conj(jq11)
+      - jp11 * v01 * conj(jq01)
     )
     / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
     )
   )
 
 
-def LINEAR_VIS_GAINS_Q(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def LINEAR_VIS_JONES_Q(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq01)
-      - gp00 * v11 * conj(gq00)
-      - gp01 * v00 * conj(gq01)
-      + gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
-      + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      jp00 * v10 * conj(jq10)
+      - jp00 * v11 * conj(jq00)
+      - jp01 * v10 * conj(jq11)
+      + jp01 * v11 * conj(jq01)
+      - jp10 * v00 * conj(jq10)
+      + jp10 * v01 * conj(jq00)
+      + jp11 * v00 * conj(jq11)
+      - jp11 * v01 * conj(jq01)
     )
     / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
     )
   )
 
 
-def LINEAR_VIS_GAINS_U(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def LINEAR_VIS_JONES_U(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
-      + gp01 * v10 * conj(gq10)
-      + gp10 * v01 * conj(gq01)
-      - gp10 * v11 * conj(gq00)
-      - gp11 * v00 * conj(gq01)
-      + gp11 * v10 * conj(gq00)
+      jp00 * v10 * conj(jq11)
+      - jp00 * v11 * conj(jq01)
+      + jp01 * v10 * conj(jq10)
+      - jp01 * v11 * conj(jq00)
+      - jp10 * v00 * conj(jq11)
+      + jp10 * v01 * conj(jq01)
+      - jp11 * v00 * conj(jq10)
+      + jp11 * v01 * conj(jq00)
     )
     / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
     )
   )
 
 
-def LINEAR_VIS_GAINS_V(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    0.5
-    * 1j
-    * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
-      + gp01 * v10 * conj(gq10)
-      - gp10 * v01 * conj(gq01)
-      + gp10 * v11 * conj(gq00)
-      + gp11 * v00 * conj(gq01)
-      - gp11 * v10 * conj(gq00)
-    )
-    / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
-    )
-  )
-
-
-def LINEAR_WEIGHT_GAINS_I(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    gp00 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq01)
-    + gp10 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq10)
-    + gp10 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq11)
-    + gp11 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq10)
-    + gp11 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq11)
-  ).real
-
-
-def LINEAR_WEIGHT_GAINS_Q(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    gp00 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq01)
-    - gp10 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq10)
-    - gp10 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq11)
-    - gp11 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq10)
-    - gp11 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq11)
-  ).real
-
-
-def LINEAR_WEIGHT_GAINS_U(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    gp00 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq10)
-    + gp00 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq11)
-    + gp01 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq10)
-    + gp01 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq01)
-  ).real
-
-
-def LINEAR_WEIGHT_GAINS_V(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    -gp00 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq10)
-    - gp00 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq11)
-    - gp01 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq10)
-    - gp01 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq01)
-  ).real
-
-
-def LINEAR_VIS_NOGAINS_I(v00, v01, v10, v11):
-  return 0.5 * v00 + 0.5 * v11
-
-
-def LINEAR_VIS_NOGAINS_Q(v00, v01, v10, v11):
-  return 0.5 * v00 - 0.5 * v11
-
-
-def LINEAR_VIS_NOGAINS_U(v00, v01, v10, v11):
-  return 0.5 * v01 + 0.5 * v10
-
-
-def LINEAR_VIS_NOGAINS_V(v00, v01, v10, v11):
-  return 0.5 * 1j * (v01 - v10)
-
-
-def LINEAR_WEIGHT_NOGAINS_I(w00, w01, w10, w11):
-  return (w00 + w11).real
-
-
-def LINEAR_WEIGHT_NOGAINS_Q(w00, w01, w10, w11):
-  return (w00 + w11).real
-
-
-def LINEAR_WEIGHT_NOGAINS_U(w00, w01, w10, w11):
-  return (w01 + w10).real
-
-
-def LINEAR_WEIGHT_NOGAINS_V(w00, w01, w10, w11):
-  return (w01 + w10).real
-
-
-def CIRCULAR_VIS_GAINS_I(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    0.5
-    * (
-      -gp00 * v01 * conj(gq01)
-      + gp00 * v11 * conj(gq00)
-      + gp01 * v00 * conj(gq01)
-      - gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
-      + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
-    )
-    / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
-    )
-  )
-
-
-def CIRCULAR_VIS_GAINS_Q(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
-):
-  return (
-    0.5
-    * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
-      + gp01 * v10 * conj(gq10)
-      + gp10 * v01 * conj(gq01)
-      - gp10 * v11 * conj(gq00)
-      - gp11 * v00 * conj(gq01)
-      + gp11 * v10 * conj(gq00)
-    )
-    / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
-    )
-  )
-
-
-def CIRCULAR_VIS_GAINS_U(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def LINEAR_VIS_JONES_V(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
     0.5
     * 1j
     * (
-      gp00 * v01 * conj(gq11)
-      - gp00 * v11 * conj(gq10)
-      - gp01 * v00 * conj(gq11)
-      + gp01 * v10 * conj(gq10)
-      - gp10 * v01 * conj(gq01)
-      + gp10 * v11 * conj(gq00)
-      + gp11 * v00 * conj(gq01)
-      - gp11 * v10 * conj(gq00)
+      jp00 * v10 * conj(jq11)
+      - jp00 * v11 * conj(jq01)
+      - jp01 * v10 * conj(jq10)
+      + jp01 * v11 * conj(jq00)
+      - jp10 * v00 * conj(jq11)
+      + jp10 * v01 * conj(jq01)
+      + jp11 * v00 * conj(jq10)
+      - jp11 * v01 * conj(jq00)
     )
     / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
     )
   )
 
 
-def CIRCULAR_VIS_GAINS_V(
-  v00, v01, v10, v11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def LINEAR_WEIGHT_JONES_I(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    jp00 * w00 * (jq00 * conj(jp00) + jq01 * conj(jp01)) * conj(jq00)
+    + jp00 * w01 * (jq10 * conj(jp00) + jq11 * conj(jp01)) * conj(jq10)
+    + jp01 * w00 * (jq00 * conj(jp00) + jq01 * conj(jp01)) * conj(jq01)
+    + jp01 * w01 * (jq10 * conj(jp00) + jq11 * conj(jp01)) * conj(jq11)
+    + jp10 * w10 * (jq00 * conj(jp10) + jq01 * conj(jp11)) * conj(jq00)
+    + jp10 * w11 * (jq10 * conj(jp10) + jq11 * conj(jp11)) * conj(jq10)
+    + jp11 * w10 * (jq00 * conj(jp10) + jq01 * conj(jp11)) * conj(jq01)
+    + jp11 * w11 * (jq10 * conj(jp10) + jq11 * conj(jp11)) * conj(jq11)
+  ).real
+
+
+def LINEAR_WEIGHT_JONES_Q(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    jp00 * w00 * (jq00 * conj(jp00) - jq01 * conj(jp01)) * conj(jq00)
+    + jp00 * w01 * (jq10 * conj(jp00) - jq11 * conj(jp01)) * conj(jq10)
+    - jp01 * w00 * (jq00 * conj(jp00) - jq01 * conj(jp01)) * conj(jq01)
+    - jp01 * w01 * (jq10 * conj(jp00) - jq11 * conj(jp01)) * conj(jq11)
+    + jp10 * w10 * (jq00 * conj(jp10) - jq01 * conj(jp11)) * conj(jq00)
+    + jp10 * w11 * (jq10 * conj(jp10) - jq11 * conj(jp11)) * conj(jq10)
+    - jp11 * w10 * (jq00 * conj(jp10) - jq01 * conj(jp11)) * conj(jq01)
+    - jp11 * w11 * (jq10 * conj(jp10) - jq11 * conj(jp11)) * conj(jq11)
+  ).real
+
+
+def LINEAR_WEIGHT_JONES_U(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    jp00 * w00 * (jq00 * conj(jp01) + jq01 * conj(jp00)) * conj(jq01)
+    + jp00 * w01 * (jq10 * conj(jp01) + jq11 * conj(jp00)) * conj(jq11)
+    + jp01 * w00 * (jq00 * conj(jp01) + jq01 * conj(jp00)) * conj(jq00)
+    + jp01 * w01 * (jq10 * conj(jp01) + jq11 * conj(jp00)) * conj(jq10)
+    + jp10 * w10 * (jq00 * conj(jp11) + jq01 * conj(jp10)) * conj(jq01)
+    + jp10 * w11 * (jq10 * conj(jp11) + jq11 * conj(jp10)) * conj(jq11)
+    + jp11 * w10 * (jq00 * conj(jp11) + jq01 * conj(jp10)) * conj(jq00)
+    + jp11 * w11 * (jq10 * conj(jp11) + jq11 * conj(jp10)) * conj(jq10)
+  ).real
+
+
+def LINEAR_WEIGHT_JONES_V(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    -jp00 * w00 * (jq00 * conj(jp01) - jq01 * conj(jp00)) * conj(jq01)
+    - jp00 * w01 * (jq10 * conj(jp01) - jq11 * conj(jp00)) * conj(jq11)
+    + jp01 * w00 * (jq00 * conj(jp01) - jq01 * conj(jp00)) * conj(jq00)
+    + jp01 * w01 * (jq10 * conj(jp01) - jq11 * conj(jp00)) * conj(jq10)
+    - jp10 * w10 * (jq00 * conj(jp11) - jq01 * conj(jp10)) * conj(jq01)
+    - jp10 * w11 * (jq10 * conj(jp11) - jq11 * conj(jp10)) * conj(jq11)
+    + jp11 * w10 * (jq00 * conj(jp11) - jq01 * conj(jp10)) * conj(jq00)
+    + jp11 * w11 * (jq10 * conj(jp11) - jq11 * conj(jp10)) * conj(jq10)
+  ).real
+
+
+def LINEAR_VIS_NOJONES_I(v00, v01, v10, v11):
+  return 0.5 * v00 + 0.5 * v11
+
+
+def LINEAR_VIS_NOJONES_Q(v00, v01, v10, v11):
+  return 0.5 * v00 - 0.5 * v11
+
+
+def LINEAR_VIS_NOJONES_U(v00, v01, v10, v11):
+  return 0.5 * v01 + 0.5 * v10
+
+
+def LINEAR_VIS_NOJONES_V(v00, v01, v10, v11):
+  return 0.5 * 1j * (-v01 + v10)
+
+
+def LINEAR_WEIGHT_NOJONES_I(w00, w01, w10, w11):
+  return (w00 + w11).real
+
+
+def LINEAR_WEIGHT_NOJONES_Q(w00, w01, w10, w11):
+  return (w00 + w11).real
+
+
+def LINEAR_WEIGHT_NOJONES_U(w00, w01, w10, w11):
+  return (w01 + w10).real
+
+
+def LINEAR_WEIGHT_NOJONES_V(w00, w01, w10, w11):
+  return (w01 + w10).real
+
+
+def CIRCULAR_VIS_JONES_I(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
     0.5
     * (
-      gp00 * v01 * conj(gq01)
-      - gp00 * v11 * conj(gq00)
-      - gp01 * v00 * conj(gq01)
-      + gp01 * v10 * conj(gq00)
-      - gp10 * v01 * conj(gq11)
-      + gp10 * v11 * conj(gq10)
-      + gp11 * v00 * conj(gq11)
-      - gp11 * v10 * conj(gq10)
+      -jp00 * v10 * conj(jq10)
+      + jp00 * v11 * conj(jq00)
+      - jp01 * v10 * conj(jq11)
+      + jp01 * v11 * conj(jq01)
+      + jp10 * v00 * conj(jq10)
+      - jp10 * v01 * conj(jq00)
+      + jp11 * v00 * conj(jq11)
+      - jp11 * v01 * conj(jq01)
     )
     / (
-      gp00 * gp11 * conj(gq00) * conj(gq11)
-      - gp00 * gp11 * conj(gq01) * conj(gq10)
-      - gp01 * gp10 * conj(gq00) * conj(gq11)
-      + gp01 * gp10 * conj(gq01) * conj(gq10)
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
     )
   )
 
 
-def CIRCULAR_WEIGHT_GAINS_I(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def CIRCULAR_VIS_JONES_Q(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq01)
-    + gp10 * w00 * (gq00 * conj(gp00) + gq10 * conj(gp10)) * conj(gq10)
-    + gp10 * w01 * (gq01 * conj(gp00) + gq11 * conj(gp10)) * conj(gq11)
-    + gp11 * w10 * (gq00 * conj(gp01) + gq10 * conj(gp11)) * conj(gq10)
-    + gp11 * w11 * (gq01 * conj(gp01) + gq11 * conj(gp11)) * conj(gq11)
+    0.5
+    * (
+      jp00 * v10 * conj(jq11)
+      - jp00 * v11 * conj(jq01)
+      + jp01 * v10 * conj(jq10)
+      - jp01 * v11 * conj(jq00)
+      - jp10 * v00 * conj(jq11)
+      + jp10 * v01 * conj(jq01)
+      - jp11 * v00 * conj(jq10)
+      + jp11 * v01 * conj(jq00)
+    )
+    / (
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
+    )
+  )
+
+
+def CIRCULAR_VIS_JONES_U(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    0.5
+    * 1j
+    * (
+      jp00 * v10 * conj(jq11)
+      - jp00 * v11 * conj(jq01)
+      - jp01 * v10 * conj(jq10)
+      + jp01 * v11 * conj(jq00)
+      - jp10 * v00 * conj(jq11)
+      + jp10 * v01 * conj(jq01)
+      + jp11 * v00 * conj(jq10)
+      - jp11 * v01 * conj(jq00)
+    )
+    / (
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
+    )
+  )
+
+
+def CIRCULAR_VIS_JONES_V(
+  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    0.5
+    * (
+      jp00 * v10 * conj(jq10)
+      - jp00 * v11 * conj(jq00)
+      - jp01 * v10 * conj(jq11)
+      + jp01 * v11 * conj(jq01)
+      - jp10 * v00 * conj(jq10)
+      + jp10 * v01 * conj(jq00)
+      + jp11 * v00 * conj(jq11)
+      - jp11 * v01 * conj(jq01)
+    )
+    / (
+      jp00 * jp11 * conj(jq00) * conj(jq11)
+      - jp00 * jp11 * conj(jq01) * conj(jq10)
+      - jp01 * jp10 * conj(jq00) * conj(jq11)
+      + jp01 * jp10 * conj(jq01) * conj(jq10)
+    )
+  )
+
+
+def CIRCULAR_WEIGHT_JONES_I(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
+):
+  return (
+    jp00 * w00 * (jq00 * conj(jp00) + jq01 * conj(jp01)) * conj(jq00)
+    + jp00 * w01 * (jq10 * conj(jp00) + jq11 * conj(jp01)) * conj(jq10)
+    + jp01 * w00 * (jq00 * conj(jp00) + jq01 * conj(jp01)) * conj(jq01)
+    + jp01 * w01 * (jq10 * conj(jp00) + jq11 * conj(jp01)) * conj(jq11)
+    + jp10 * w10 * (jq00 * conj(jp10) + jq01 * conj(jp11)) * conj(jq00)
+    + jp10 * w11 * (jq10 * conj(jp10) + jq11 * conj(jp11)) * conj(jq10)
+    + jp11 * w10 * (jq00 * conj(jp10) + jq01 * conj(jp11)) * conj(jq01)
+    + jp11 * w11 * (jq10 * conj(jp10) + jq11 * conj(jp11)) * conj(jq11)
   ).real
 
 
-def CIRCULAR_WEIGHT_GAINS_Q(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def CIRCULAR_WEIGHT_JONES_Q(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq10)
-    + gp00 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq11)
-    + gp01 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq10)
-    + gp01 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) + gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) + gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) + gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) + gq11 * conj(gp01)) * conj(gq01)
+    jp00 * w00 * (jq00 * conj(jp01) + jq01 * conj(jp00)) * conj(jq01)
+    + jp00 * w01 * (jq10 * conj(jp01) + jq11 * conj(jp00)) * conj(jq11)
+    + jp01 * w00 * (jq00 * conj(jp01) + jq01 * conj(jp00)) * conj(jq00)
+    + jp01 * w01 * (jq10 * conj(jp01) + jq11 * conj(jp00)) * conj(jq10)
+    + jp10 * w10 * (jq00 * conj(jp11) + jq01 * conj(jp10)) * conj(jq01)
+    + jp10 * w11 * (jq10 * conj(jp11) + jq11 * conj(jp10)) * conj(jq11)
+    + jp11 * w10 * (jq00 * conj(jp11) + jq01 * conj(jp10)) * conj(jq00)
+    + jp11 * w11 * (jq10 * conj(jp11) + jq11 * conj(jp10)) * conj(jq10)
   ).real
 
 
-def CIRCULAR_WEIGHT_GAINS_U(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def CIRCULAR_WEIGHT_JONES_U(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
-    -gp00 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq10)
-    - gp00 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq11)
-    - gp01 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq10)
-    - gp01 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq11)
-    + gp10 * w00 * (gq00 * conj(gp10) - gq10 * conj(gp00)) * conj(gq00)
-    + gp10 * w01 * (gq01 * conj(gp10) - gq11 * conj(gp00)) * conj(gq01)
-    + gp11 * w10 * (gq00 * conj(gp11) - gq10 * conj(gp01)) * conj(gq00)
-    + gp11 * w11 * (gq01 * conj(gp11) - gq11 * conj(gp01)) * conj(gq01)
+    -jp00 * w00 * (jq00 * conj(jp01) - jq01 * conj(jp00)) * conj(jq01)
+    - jp00 * w01 * (jq10 * conj(jp01) - jq11 * conj(jp00)) * conj(jq11)
+    + jp01 * w00 * (jq00 * conj(jp01) - jq01 * conj(jp00)) * conj(jq00)
+    + jp01 * w01 * (jq10 * conj(jp01) - jq11 * conj(jp00)) * conj(jq10)
+    - jp10 * w10 * (jq00 * conj(jp11) - jq01 * conj(jp10)) * conj(jq01)
+    - jp10 * w11 * (jq10 * conj(jp11) - jq11 * conj(jp10)) * conj(jq11)
+    + jp11 * w10 * (jq00 * conj(jp11) - jq01 * conj(jp10)) * conj(jq00)
+    + jp11 * w11 * (jq10 * conj(jp11) - jq11 * conj(jp10)) * conj(jq10)
   ).real
 
 
-def CIRCULAR_WEIGHT_GAINS_V(
-  w00, w01, w10, w11, gp00, gp01, gp10, gp11, gq00, gq01, gq10, gq11
+def CIRCULAR_WEIGHT_JONES_V(
+  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
 ):
   return (
-    gp00 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq00)
-    + gp00 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq01)
-    + gp01 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq00)
-    + gp01 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq01)
-    - gp10 * w00 * (gq00 * conj(gp00) - gq10 * conj(gp10)) * conj(gq10)
-    - gp10 * w01 * (gq01 * conj(gp00) - gq11 * conj(gp10)) * conj(gq11)
-    - gp11 * w10 * (gq00 * conj(gp01) - gq10 * conj(gp11)) * conj(gq10)
-    - gp11 * w11 * (gq01 * conj(gp01) - gq11 * conj(gp11)) * conj(gq11)
+    jp00 * w00 * (jq00 * conj(jp00) - jq01 * conj(jp01)) * conj(jq00)
+    + jp00 * w01 * (jq10 * conj(jp00) - jq11 * conj(jp01)) * conj(jq10)
+    - jp01 * w00 * (jq00 * conj(jp00) - jq01 * conj(jp01)) * conj(jq01)
+    - jp01 * w01 * (jq10 * conj(jp00) - jq11 * conj(jp01)) * conj(jq11)
+    + jp10 * w10 * (jq00 * conj(jp10) - jq01 * conj(jp11)) * conj(jq00)
+    + jp10 * w11 * (jq10 * conj(jp10) - jq11 * conj(jp11)) * conj(jq10)
+    - jp11 * w10 * (jq00 * conj(jp10) - jq01 * conj(jp11)) * conj(jq01)
+    - jp11 * w11 * (jq10 * conj(jp10) - jq11 * conj(jp11)) * conj(jq11)
   ).real
 
 
-def CIRCULAR_VIS_NOGAINS_I(v00, v01, v10, v11):
+def CIRCULAR_VIS_NOJONES_I(v00, v01, v10, v11):
   return 0.5 * v00 + 0.5 * v11
 
 
-def CIRCULAR_VIS_NOGAINS_Q(v00, v01, v10, v11):
+def CIRCULAR_VIS_NOJONES_Q(v00, v01, v10, v11):
   return 0.5 * v01 + 0.5 * v10
 
 
-def CIRCULAR_VIS_NOGAINS_U(v00, v01, v10, v11):
-  return 0.5 * 1j * (v01 - v10)
+def CIRCULAR_VIS_NOJONES_U(v00, v01, v10, v11):
+  return 0.5 * 1j * (-v01 + v10)
 
 
-def CIRCULAR_VIS_NOGAINS_V(v00, v01, v10, v11):
+def CIRCULAR_VIS_NOJONES_V(v00, v01, v10, v11):
   return 0.5 * v00 - 0.5 * v11
 
 
-def CIRCULAR_WEIGHT_NOGAINS_I(w00, w01, w10, w11):
+def CIRCULAR_WEIGHT_NOJONES_I(w00, w01, w10, w11):
   return (w00 + w11).real
 
 
-def CIRCULAR_WEIGHT_NOGAINS_Q(w00, w01, w10, w11):
+def CIRCULAR_WEIGHT_NOJONES_Q(w00, w01, w10, w11):
   return (w01 + w10).real
 
 
-def CIRCULAR_WEIGHT_NOGAINS_U(w00, w01, w10, w11):
+def CIRCULAR_WEIGHT_NOJONES_U(w00, w01, w10, w11):
   return (w01 + w10).real
 
 
-def CIRCULAR_WEIGHT_NOGAINS_V(w00, w01, w10, w11):
+def CIRCULAR_WEIGHT_NOJONES_V(w00, w01, w10, w11):
   return (w00 + w11).real
 
 
 CONVERT_FNS = {
-  ("VIS", "LINEAR", "GAINS", "I"): LINEAR_VIS_GAINS_I,
-  ("VIS", "LINEAR", "GAINS", "Q"): LINEAR_VIS_GAINS_Q,
-  ("VIS", "LINEAR", "GAINS", "U"): LINEAR_VIS_GAINS_U,
-  ("VIS", "LINEAR", "GAINS", "V"): LINEAR_VIS_GAINS_V,
-  ("WEIGHT", "LINEAR", "GAINS", "I"): LINEAR_WEIGHT_GAINS_I,
-  ("WEIGHT", "LINEAR", "GAINS", "Q"): LINEAR_WEIGHT_GAINS_Q,
-  ("WEIGHT", "LINEAR", "GAINS", "U"): LINEAR_WEIGHT_GAINS_U,
-  ("WEIGHT", "LINEAR", "GAINS", "V"): LINEAR_WEIGHT_GAINS_V,
-  ("VIS", "LINEAR", "NOGAINS", "I"): LINEAR_VIS_NOGAINS_I,
-  ("VIS", "LINEAR", "NOGAINS", "Q"): LINEAR_VIS_NOGAINS_Q,
-  ("VIS", "LINEAR", "NOGAINS", "U"): LINEAR_VIS_NOGAINS_U,
-  ("VIS", "LINEAR", "NOGAINS", "V"): LINEAR_VIS_NOGAINS_V,
-  ("WEIGHT", "LINEAR", "NOGAINS", "I"): LINEAR_WEIGHT_NOGAINS_I,
-  ("WEIGHT", "LINEAR", "NOGAINS", "Q"): LINEAR_WEIGHT_NOGAINS_Q,
-  ("WEIGHT", "LINEAR", "NOGAINS", "U"): LINEAR_WEIGHT_NOGAINS_U,
-  ("WEIGHT", "LINEAR", "NOGAINS", "V"): LINEAR_WEIGHT_NOGAINS_V,
-  ("VIS", "CIRCULAR", "GAINS", "I"): CIRCULAR_VIS_GAINS_I,
-  ("VIS", "CIRCULAR", "GAINS", "Q"): CIRCULAR_VIS_GAINS_Q,
-  ("VIS", "CIRCULAR", "GAINS", "U"): CIRCULAR_VIS_GAINS_U,
-  ("VIS", "CIRCULAR", "GAINS", "V"): CIRCULAR_VIS_GAINS_V,
-  ("WEIGHT", "CIRCULAR", "GAINS", "I"): CIRCULAR_WEIGHT_GAINS_I,
-  ("WEIGHT", "CIRCULAR", "GAINS", "Q"): CIRCULAR_WEIGHT_GAINS_Q,
-  ("WEIGHT", "CIRCULAR", "GAINS", "U"): CIRCULAR_WEIGHT_GAINS_U,
-  ("WEIGHT", "CIRCULAR", "GAINS", "V"): CIRCULAR_WEIGHT_GAINS_V,
-  ("VIS", "CIRCULAR", "NOGAINS", "I"): CIRCULAR_VIS_NOGAINS_I,
-  ("VIS", "CIRCULAR", "NOGAINS", "Q"): CIRCULAR_VIS_NOGAINS_Q,
-  ("VIS", "CIRCULAR", "NOGAINS", "U"): CIRCULAR_VIS_NOGAINS_U,
-  ("VIS", "CIRCULAR", "NOGAINS", "V"): CIRCULAR_VIS_NOGAINS_V,
-  ("WEIGHT", "CIRCULAR", "NOGAINS", "I"): CIRCULAR_WEIGHT_NOGAINS_I,
-  ("WEIGHT", "CIRCULAR", "NOGAINS", "Q"): CIRCULAR_WEIGHT_NOGAINS_Q,
-  ("WEIGHT", "CIRCULAR", "NOGAINS", "U"): CIRCULAR_WEIGHT_NOGAINS_U,
-  ("WEIGHT", "CIRCULAR", "NOGAINS", "V"): CIRCULAR_WEIGHT_NOGAINS_V,
+  ("VIS", "LINEAR", "JONES", "I"): LINEAR_VIS_JONES_I,
+  ("VIS", "LINEAR", "JONES", "Q"): LINEAR_VIS_JONES_Q,
+  ("VIS", "LINEAR", "JONES", "U"): LINEAR_VIS_JONES_U,
+  ("VIS", "LINEAR", "JONES", "V"): LINEAR_VIS_JONES_V,
+  ("WEIGHT", "LINEAR", "JONES", "I"): LINEAR_WEIGHT_JONES_I,
+  ("WEIGHT", "LINEAR", "JONES", "Q"): LINEAR_WEIGHT_JONES_Q,
+  ("WEIGHT", "LINEAR", "JONES", "U"): LINEAR_WEIGHT_JONES_U,
+  ("WEIGHT", "LINEAR", "JONES", "V"): LINEAR_WEIGHT_JONES_V,
+  ("VIS", "LINEAR", "NOJONES", "I"): LINEAR_VIS_NOJONES_I,
+  ("VIS", "LINEAR", "NOJONES", "Q"): LINEAR_VIS_NOJONES_Q,
+  ("VIS", "LINEAR", "NOJONES", "U"): LINEAR_VIS_NOJONES_U,
+  ("VIS", "LINEAR", "NOJONES", "V"): LINEAR_VIS_NOJONES_V,
+  ("WEIGHT", "LINEAR", "NOJONES", "I"): LINEAR_WEIGHT_NOJONES_I,
+  ("WEIGHT", "LINEAR", "NOJONES", "Q"): LINEAR_WEIGHT_NOJONES_Q,
+  ("WEIGHT", "LINEAR", "NOJONES", "U"): LINEAR_WEIGHT_NOJONES_U,
+  ("WEIGHT", "LINEAR", "NOJONES", "V"): LINEAR_WEIGHT_NOJONES_V,
+  ("VIS", "CIRCULAR", "JONES", "I"): CIRCULAR_VIS_JONES_I,
+  ("VIS", "CIRCULAR", "JONES", "Q"): CIRCULAR_VIS_JONES_Q,
+  ("VIS", "CIRCULAR", "JONES", "U"): CIRCULAR_VIS_JONES_U,
+  ("VIS", "CIRCULAR", "JONES", "V"): CIRCULAR_VIS_JONES_V,
+  ("WEIGHT", "CIRCULAR", "JONES", "I"): CIRCULAR_WEIGHT_JONES_I,
+  ("WEIGHT", "CIRCULAR", "JONES", "Q"): CIRCULAR_WEIGHT_JONES_Q,
+  ("WEIGHT", "CIRCULAR", "JONES", "U"): CIRCULAR_WEIGHT_JONES_U,
+  ("WEIGHT", "CIRCULAR", "JONES", "V"): CIRCULAR_WEIGHT_JONES_V,
+  ("VIS", "CIRCULAR", "NOJONES", "I"): CIRCULAR_VIS_NOJONES_I,
+  ("VIS", "CIRCULAR", "NOJONES", "Q"): CIRCULAR_VIS_NOJONES_Q,
+  ("VIS", "CIRCULAR", "NOJONES", "U"): CIRCULAR_VIS_NOJONES_U,
+  ("VIS", "CIRCULAR", "NOJONES", "V"): CIRCULAR_VIS_NOJONES_V,
+  ("WEIGHT", "CIRCULAR", "NOJONES", "I"): CIRCULAR_WEIGHT_NOJONES_I,
+  ("WEIGHT", "CIRCULAR", "NOJONES", "Q"): CIRCULAR_WEIGHT_NOJONES_Q,
+  ("WEIGHT", "CIRCULAR", "NOJONES", "U"): CIRCULAR_WEIGHT_NOJONES_U,
+  ("WEIGHT", "CIRCULAR", "NOJONES", "V"): CIRCULAR_WEIGHT_NOJONES_V,
 }
