@@ -153,10 +153,6 @@ def wgrid_overload(
     wavelengths = frequencies / LIGHTSPEED
 
     vis_grid = np.zeros((NSTOKES, NW, NX, NY), visibilities.dtype)
-    # weight_grid = np.zeros((NSTOKES, NW, NX, NY), weights.dtype)
-
-    vis_grid_view = vis_grid[:]
-    # weight_grid_view = weight_grid[:]
 
     for t in numba.prange(ntime):
       for bl in range(nbl):
@@ -223,7 +219,7 @@ def wgrid_overload(
                 # weighted_weights = apply_weights(wgt, pol_weight)
                 # accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
 
-    return vis_grid  # , weight_grid
+    return vis_grid
 
   return impl
 
