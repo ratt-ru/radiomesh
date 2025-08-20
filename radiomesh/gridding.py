@@ -27,6 +27,7 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 
 @register_jitable
 def maybe_conjugate(u, v, w, vis):
+  """Invert uvw and conjugate vis if w < 0.0"""
   if w < 0.0:
     u, v, w = -u, -v, -w
 
