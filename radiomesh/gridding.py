@@ -28,12 +28,10 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 @register_jitable
 def maybe_conjugate(u, v, w, vis):
   if w < 0.0:
-    u = -u
-    v = -v
-    w = -w
+    u, v, w = -u, -v, -w
 
-    for v, value in enumerate(numba.literal_unroll(vis)):
-      vis = tuple_setitem(vis, v, np.conj(value))
+    for i, value in enumerate(numba.literal_unroll(vis)):
+      vis = tuple_setitem(vis, i, np.conj(value))
 
   return u, v, w, vis
 
