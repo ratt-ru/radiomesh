@@ -1,11 +1,13 @@
 import numba
 import numpy as np
+import pytest
 
 from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
 from radiomesh.literals import Datum
 
 
-def test_es_positions_intrinsic():
+@pytest.mark.parametrize("modulo", [True, False])
+def test_es_positions_intrinsic(modulo):
   """Test that position_intrinsic returns a tuple of floats
   around the given index"""
   KERNEL = Datum(ESKernel())
@@ -16,9 +18,12 @@ def test_es_positions_intrinsic():
 
   @numba.njit
   def fn(ps):
-    return es_kernel_positions(KERNEL, N, ps)
+    return es_kernel_positions(KERNEL, N, ps, modulo)
 
-  assert fn(x) == tuple(((x + o) % N) for o in range(KERNEL.value.support))
+  if modulo:
+    assert fn(x) == tuple(((x + o) % N) for o in range(KERNEL.value.support))
+  else:
+    assert fn(x) == tuple((x + o for o in range(KERNEL.value.support)))
 
 
 def test_es_kernel_intrinsic():
