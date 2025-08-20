@@ -46,8 +46,8 @@ class WGridderParameters:
   w0: float
   dw: float
   kernel: float | ESKernel
-  pol_schema: Tuple[str, ...]
-  stokes_schema: Tuple[str, ...]
+  pol_schema: Schema
+  stokes_schema: Schema
   apply_w: bool = True
   apply_fftshift: bool = True
 
