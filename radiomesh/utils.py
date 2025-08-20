@@ -63,19 +63,20 @@ def image_params(
   nx += int(nx % 2)
   ny += int(ny % 2)
 
-  x, y = np.meshgrid(*[-ss / 2.0 + np.arange(ss) for ss in [nx, ny]], indexing="ij")
+  x, y = np.meshgrid(*[-ss / 2.0 + np.arange(ss) for ss in (nx, ny)], indexing="ij")
   x *= u_cell_rad
   y *= v_cell_rad
-
-  w = uvw[:, :, -1].ravel() * frequencies.max() / LIGHTSPEED
-  wabs = np.abs(w)
-  wmax = wabs.max()
-  wmin = -wmax
-
   eps = x**2 + y**2
   nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
-  dw = 1 / (2 * kernel.oversampling * np.abs(nm1).max())
+
+  wmax = np.abs(uvw[..., -1] * frequencies.max() / LIGHTSPEED).max()
+  wmin = np.abs(uvw[..., -1] * frequencies.min() / LIGHTSPEED).min()
+
+  # removing the factor of a half compared to expression in the
+  # paper gives the same w parameters as reported by the wgridder
+  # but I can't seem to get that to agree with the DFT
+  dw = 1.0 / (2.0 * kernel.oversampling * np.abs(nm1).max())
   nw = int(np.ceil((wmax - wmin) / dw)) + kernel.support
-  w0 = wmin - dw * (kernel.support - 1) / 2
+  w0 = (wmin + wmax) / 2.0 - dw * (nw - 1) / 2.0
 
   return (nx, ny, nw, u_cell_rad, v_cell_rad, w0, dw)
