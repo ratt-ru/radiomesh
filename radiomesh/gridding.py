@@ -222,7 +222,7 @@ def wgrid_overload(
   return impl
 
 
-@numba.njit(**{**JIT_OPTIONS, "parallel": False, "boundscheck": True})
+@numba.njit(**{**JIT_OPTIONS, "parallel": False})
 def wgrid(
   uvw: npt.NDArray[np.floating],
   visibilities: npt.NDArray[np.complexfloating],
