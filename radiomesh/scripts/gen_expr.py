@@ -22,12 +22,12 @@ from numpy import conjugate as conj
 """
 
 POLARISATION_TYPES = ["linear", "circular"]
-JONE_P_ARGUMENTS = ["jp00", "jp01", "jp10", "jp11"]
+JONES_P_ARGUMENTS = ["jp00", "jp01", "jp10", "jp11"]
 JONES_Q_ARGUMENTS = ["jq00", "jq01", "jq10", "jq11"]
 WEIGHT_ARGUMENTS = ["w00", "w01", "w10", "w11"]
 VIS_ARGUMENTS = ["v00", "v01", "v10", "v11"]
-WEIGHT_FN_ARGUMENTS = WEIGHT_ARGUMENTS + JONE_P_ARGUMENTS + JONES_Q_ARGUMENTS
-VIS_FN_ARGUMENTS = VIS_ARGUMENTS + JONE_P_ARGUMENTS + JONES_Q_ARGUMENTS
+WEIGHT_FN_ARGUMENTS = WEIGHT_ARGUMENTS + JONES_P_ARGUMENTS + JONES_Q_ARGUMENTS
+VIS_FN_ARGUMENTS = VIS_ARGUMENTS + JONES_P_ARGUMENTS + JONES_Q_ARGUMENTS
 
 
 def sympy_expressions(
@@ -44,7 +44,7 @@ def sympy_expressions(
         from jones and weights.
   """
   # set up symbolic expressions
-  jp00, jp01, jp10, jp11 = sympy.symbols(" ".join(JONE_P_ARGUMENTS), real=False)
+  jp00, jp01, jp10, jp11 = sympy.symbols(" ".join(JONES_P_ARGUMENTS), real=False)
   jq00, jq01, jq10, jq11 = sympy.symbols(" ".join(JONES_Q_ARGUMENTS), real=False)
   w00, w01, w10, w11 = sympy.symbols(" ".join(WEIGHT_ARGUMENTS), real=True)
   v00, v01, v10, v11 = sympy.symbols(" ".join(VIS_ARGUMENTS), real=False)

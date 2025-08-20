@@ -68,13 +68,10 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_jones):
   else:
     jones_params = None
 
-  # vis_grid, weight_grid = wgrid(
   vis_grid = wgrid(uvw, vis, weights, flags, freqs, Datum(wgrid_params), jones_params)
 
   assert vis_grid.shape == (4, nw, nx, ny)
-  # assert weight_grid.shape == (4, nx, ny)
   assert vis_grid.dtype == vis.dtype
-  # assert weight_grid.dtype == weights.dtype
 
   # stokes_func wants a matrix form for jones
   jones_dims = (2, 2)
