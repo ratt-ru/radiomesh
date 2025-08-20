@@ -171,9 +171,10 @@ def wgrid_overload(
           vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
-          u_scaled = u * U_SIGN * wavelengths[ch] * PIXSIZEX
-          v_scaled = v * V_SIGN * wavelengths[ch] * PIXSIZEY
-          w_scaled = w * wavelengths[ch]
+          wavelength = wavelengths[ch]
+          u_scaled = u * U_SIGN * wavelength * PIXSIZEX
+          v_scaled = v * V_SIGN * wavelength * PIXSIZEY
+          w_scaled = w * wavelength
 
           # Use only half the w grid due to Hermitian symmetry
           u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
@@ -201,23 +202,20 @@ def wgrid_overload(
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
           z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
 
-          for zfi, zk in zip(
+          for zfi, zkw in zip(
             numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
           ):
             zi = int(zfi)
-            for xfi, xk in zip(
+            for xfi, xkw in zip(
               numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
             ):
               xi = int(xfi)
-              for yfi, yk in zip(
+              for yfi, ykw in zip(
                 numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
               ):
-                pol_weight = xk * yk * zk
                 yi = int(yfi)
-                weighted_stokes = apply_weights(vis, pol_weight)
-                accumulate_data(weighted_stokes, vis_grid_view, (zi, xi, yi), 0)
-                # weighted_weights = apply_weights(wgt, pol_weight)
-                # accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
+                weighted_stokes = apply_weights(vis, xkw * ykw * zkw)
+                accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
 
     return vis_grid
 
