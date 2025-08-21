@@ -5,6 +5,7 @@ from typing import Tuple
 import numba
 import numpy as np
 import numpy.typing as npt
+from numba import literal_unroll
 from numba.core import types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.cpython.unsafe.tuple import tuple_setitem
@@ -28,7 +29,7 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 @register_jitable
 def conj_vis(vis):
   """Conjugate a tuple of visibilities"""
-  for i, value in enumerate(numba.literal_unroll(vis)):
+  for i, value in enumerate(literal_unroll(vis)):
     vis = tuple_setitem(vis, i, np.conj(value))
 
   return vis
@@ -153,9 +154,9 @@ def wgrid_overload(
 
     vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
 
-    for t in numba.prange(ntime):
+    for t in range(ntime):
       for bl in range(nbl):
-        u, v, w = load_data(uvw, (t, bl), NUVW, -1)
+        u, v, _ = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
           idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
@@ -194,14 +195,8 @@ def wgrid_overload(
             jones_wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
             jones_vis = apply_weights(jones_vis, jones_wgt)
 
-            for xfi, xkw in zip(
-              numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
-            ):
-              xi = int(xfi)
-              for yfi, ykw in zip(
-                numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
-              ):
-                yi = int(yfi)
+            for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
+              for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
                 weighted_stokes = apply_weights(jones_vis, xkw * ykw)
                 accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
 
@@ -224,7 +219,7 @@ def wgrid_overload(
 
     vis_grid = np.zeros((NSTOKES, NW, NX, NY), visibilities.dtype)
 
-    for t in numba.prange(ntime):
+    for t in range(ntime):
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
@@ -281,18 +276,9 @@ def wgrid_overload(
             if should_conjugate:
               dir_vis = conj_vis(dir_vis)
 
-            for zfi, zkw in zip(
-              numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
-            ):
-              zi = int(zfi)
-              for xfi, xkw in zip(
-                numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
-              ):
-                xi = int(xfi)
-                for yfi, ykw in zip(
-                  numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
-                ):
-                  yi = int(yfi)
+            for zi, zkw in zip(literal_unroll(z_indices), literal_unroll(z_kernel)):
+              for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
+                for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
                   weighted_stokes = apply_weights(dir_vis, xkw * ykw * zkw)
                   accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
 
