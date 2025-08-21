@@ -20,17 +20,17 @@ def es_kernel_positions(
   kernel_literal: DatumLiteral,
   grid_size: types.IntegerLiteral,
   pixel_start: types.Integer,
-  modulo_grid_size: types.BooleanLiteral,
+  fftshift_grid: types.BooleanLiteral,
 ) -> Tuple[Signature, Callable]:
   """Return a tuple of kernel
   :code:`(pixel_start + range(kernel.support)) % grid_size`
   positions.
 
   Args:
-    kernel_literal: ES kernel object
-    grid_size: grid extent
+    kernel_literal: ES kernel object.
+    grid_size: grid extent.
     pixel_start: u/v pixel start.
-    modulo_grid_size: flag indicating whether modulo grid size should be applied
+    fftshift_grid: flag indicating whether the position if fftshifted onto the grid.
 
   Returns:
     Tuple of kernel index positions
@@ -44,17 +44,17 @@ def es_kernel_positions(
   if not isinstance(pixel_start, types.Integer):
     raise TypingError(f"'pixel_start' ({pixel_start}) must be an integer")
 
-  if not isinstance(modulo_grid_size, types.BooleanLiteral):
+  if not isinstance(fftshift_grid, types.BooleanLiteral):
     raise RequireLiteralValue(
-      f"'modulo_grid_size' {modulo_grid_size} must be a BooleanLiteral"
+      f"'fftshift_grid' {fftshift_grid} must be a BooleanLiteral"
     )
 
   kernel = kernel_literal.datum_value
   SUPPORT = kernel.support
   N = grid_size.literal_value
-  MODULO = modulo_grid_size.literal_value
+  FFTSHIFT = fftshift_grid.literal_value
   return_type = types.Tuple([types.int64] * SUPPORT)
-  sig = return_type(kernel_literal, grid_size, pixel_start, modulo_grid_size)
+  sig = return_type(kernel_literal, grid_size, pixel_start, fftshift_grid)
 
   def codegen(context, builder, signature, args):
     _, _, pixel_start, _ = args
@@ -70,7 +70,7 @@ def es_kernel_positions(
       ir_offset = ir.Constant(llvm_offset_type, so)
       fftshift_grid_index = context.compile_internal(
         builder,
-        (lambda ps, o: (ps + o) % N) if MODULO else (lambda ps, o: ps + o),
+        (lambda ps, o: (ps + o) % N) if FFTSHIFT else (lambda ps, o: ps + o),
         offset_type(pixel_start_type, offset_type),
         [pixel_start, ir_offset],
       )
