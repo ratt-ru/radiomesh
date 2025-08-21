@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 
+from radiomesh.es_kernel import ESKernel
 from radiomesh.gridding import WGridderParameters, wgrid
 from radiomesh.literals import Datum, Schema
 from radiomesh.utils import image_params
@@ -94,11 +95,11 @@ if __name__ == "__main__":
 
   fov = 1.0
   oversampling = 2.0
-  epsilon = 1e-4
-  nx, ny, pixsizex, pixsizey = image_params(uvw, freq, fov, oversampling)
+  kernel = ESKernel(epsilon=1e-4, apply_w=False)
+  nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freq, fov, kernel)
 
   if args.backend == "ducc0":
-    do_ducc0_wgridding(uvw, freq, vis, wgt, nx, ny, pixsizex, pixsizey, epsilon)
+    do_ducc0_wgridding(uvw, freq, vis, wgt, nx, ny, pixsizex, pixsizey, kernel.epsilon)
   elif args.backend == "radiomesh":
     (ntime,) = utime.shape
     # Reshape to (time, baseline, chan, corr)
@@ -110,11 +111,15 @@ if __name__ == "__main__":
     wgrid_params = WGridderParameters(
       nx,
       ny,
+      nw,
       pixsizex,
       pixsizey,
-      epsilon,
+      w0,
+      dw,
+      kernel,
       Schema(("XX", "XY", "YX", "YY")),
       Schema(("I", "Q", "U", "V")),
+      apply_w=False,
     )
 
     ntime, nbl, nchan, ncorr = vis.shape

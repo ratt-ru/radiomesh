@@ -20,15 +20,17 @@ def es_kernel_positions(
   kernel_literal: DatumLiteral,
   grid_size: types.IntegerLiteral,
   pixel_start: types.Integer,
+  fftshift_grid: types.BooleanLiteral,
 ) -> Tuple[Signature, Callable]:
   """Return a tuple of kernel
   :code:`(pixel_start + range(kernel.support)) % grid_size`
   positions.
 
   Args:
-    kernel_literal: ES kernel object
-    grid_size: grid extent
+    kernel_literal: ES kernel object.
+    grid_size: grid extent.
     pixel_start: u/v pixel start.
+    fftshift_grid: flag indicating whether the position if fftshifted onto the grid.
 
   Returns:
     Tuple of kernel index positions
@@ -42,27 +44,33 @@ def es_kernel_positions(
   if not isinstance(pixel_start, types.Integer):
     raise TypingError(f"'pixel_start' ({pixel_start}) must be an integer")
 
+  if not isinstance(fftshift_grid, types.BooleanLiteral):
+    raise RequireLiteralValue(
+      f"'fftshift_grid' {fftshift_grid} must be a BooleanLiteral"
+    )
+
   kernel = kernel_literal.datum_value
   SUPPORT = kernel.support
   N = grid_size.literal_value
+  FFTSHIFT = fftshift_grid.literal_value
   return_type = types.Tuple([types.int64] * SUPPORT)
-  sig = return_type(kernel_literal, grid_size, pixel_start)
+  sig = return_type(kernel_literal, grid_size, pixel_start, fftshift_grid)
 
   def codegen(context, builder, signature, args):
-    _, _, pixel_start = args
-    _, _, pixel_start_type = signature.args
+    _, _, pixel_start, _ = args
+    _, _, pixel_start_type, _ = signature.args
     llvm_ret_type = context.get_value_type(signature.return_type)
     offset_type = signature.return_type.dtype
     llvm_offset_type = context.get_value_type(offset_type)
     pos_tuple = cgutils.get_null_value(llvm_ret_type)
 
-    # Evaluate the fftshifted grid index for
+    # Evaluate the possibly, fftshifted grid index for
     # each position in the kernel support
     for so in range(SUPPORT):
       ir_offset = ir.Constant(llvm_offset_type, so)
       fftshift_grid_index = context.compile_internal(
         builder,
-        lambda ps, o: (ps + o) % N,
+        (lambda ps, o: (ps + o) % N) if FFTSHIFT else (lambda ps, o: ps + o),
         offset_type(pixel_start_type, offset_type),
         [pixel_start, ir_offset],
       )

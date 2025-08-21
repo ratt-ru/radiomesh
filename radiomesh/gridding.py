@@ -7,7 +7,8 @@ import numpy as np
 import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue, TypingError
-from numba.extending import overload
+from numba.cpython.unsafe.tuple import tuple_setitem
+from numba.extending import overload, register_jitable
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
@@ -24,15 +25,30 @@ from radiomesh.utils import wgridder_conventions
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
 
 
+@register_jitable
+def maybe_conjugate(u, v, w, vis):
+  """Invert uvw and conjugate vis if w < 0.0"""
+  if w < 0.0:
+    u, v, w = -u, -v, -w
+
+    for i, value in enumerate(numba.literal_unroll(vis)):
+      vis = tuple_setitem(vis, i, np.conj(value))
+
+  return u, v, w, vis
+
+
 @dataclass(slots=True, eq=True, unsafe_hash=True)
 class WGridderParameters:
   nx: int
   ny: int
+  nw: int
   pixsizex: float
   pixsizey: float
+  w0: float
+  dw: float
   kernel: float | ESKernel
-  pol_schema: Tuple[str, ...]
-  stokes_schema: Tuple[str, ...]
+  pol_schema: Schema
+  stokes_schema: Schema
   apply_w: bool = True
   apply_fftshift: bool = True
 
@@ -109,9 +125,12 @@ def wgrid_overload(
 
   NX = wgrid_params.nx
   NY = wgrid_params.ny
+  NW = wgrid_params.nw
   PIXSIZEX = wgrid_params.pixsizex
   PIXSIZEY = wgrid_params.pixsizey
-  U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
+  W0 = wgrid_params.w0
+  DW = wgrid_params.dw
+  U_SIGN, V_SIGN, W_SIGN, _, _ = wgridder_conventions(0.0, 0.0)
 
   JONES_VIS_DATUM = Datum(
     ApplyJones("vis", POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value)
@@ -120,7 +139,7 @@ def wgrid_overload(
     ApplyJones("weight", POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value)
   )
 
-  def impl(
+  def no_w_impl(
     uvw,
     visibilities,
     weights,
@@ -135,10 +154,6 @@ def wgrid_overload(
     wavelengths = frequencies / LIGHTSPEED
 
     vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
-    weight_grid = np.zeros((NSTOKES, NX, NY), weights.dtype)
-
-    vis_grid_view = vis_grid[:]
-    # weight_grid_view = weight_grid[:]
 
     for t in numba.prange(ntime):
       for bl in range(nbl):
@@ -157,8 +172,9 @@ def wgrid_overload(
           vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
-          u_scaled = u * U_SIGN * wavelengths[ch] * PIXSIZEX
-          v_scaled = v * V_SIGN * wavelengths[ch] * PIXSIZEY
+          wavelength = wavelengths[ch]
+          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
+          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
 
           # UV coordinates on the FFT shifted grid
           u_grid = (u_scaled * NX) % NX
@@ -168,32 +184,110 @@ def wgrid_overload(
           u_pixel_start = int(np.round(u_grid)) - HALF_SUPPORT_INT
           v_pixel_start = int(np.round(v_grid)) - HALF_SUPPORT_INT
 
-          # Tuple of indices associated with each kernel value in X and Y
+          # Tuple of indices associated with each kernel value in X, Y and Z
           # Of length kernel.support
-          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start)
-          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start)
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start, True)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start, True)
 
           # Tuples of kernel values of length kernel.support
           x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
-          for xfi, xk in zip(
+          for xfi, xkw in zip(
             numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
           ):
             xi = int(xfi)
-            for yfi, yk in zip(
+            for yfi, ykw in zip(
               numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
             ):
-              pol_weight = xk * yk
               yi = int(yfi)
-              weighted_stokes = apply_weights(vis, pol_weight)
-              accumulate_data(weighted_stokes, vis_grid_view, (xi, yi), 0)
-              # weighted_weights = apply_weights(wgt, pol_weight)
-              # accumulate_data(weighted_weights, weight_grid_view, (xi, yi), 0)
+              weighted_stokes = apply_weights(vis, xkw * ykw)
+              accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
 
-    return vis_grid, weight_grid
+    return vis_grid
 
-  return impl
+  def apply_w_impl(
+    uvw,
+    visibilities,
+    weights,
+    flags,
+    frequencies,
+    wgrid_literal_params,
+    jones_params,
+  ):
+    check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
+    ntime, nbl, nchan, _ = visibilities.shape
+
+    wavelengths = frequencies / LIGHTSPEED
+
+    vis_grid = np.zeros((NSTOKES, NW, NX, NY), visibilities.dtype)
+
+    for t in numba.prange(ntime):
+      for bl in range(nbl):
+        u, v, w = load_data(uvw, (t, bl), NUVW, -1)
+        for ch in range(nchan):
+          idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
+          # Return early if any visibility is flagged
+          vis_flag = load_data(flags, idx, NPOL, -1)
+          if reduce(any_flagged, vis_flag, False):
+            continue
+
+          vis = load_data(visibilities, idx, NPOL, -1)
+          wgt = load_data(weights, idx, NPOL, -1)
+          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
+          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
+          vis = apply_weights(vis, wgt)
+
+          # Scaled uv coordinates
+          wavelength = wavelengths[ch]
+          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
+          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
+          w_scaled = W_SIGN * w * wavelength
+
+          # Use only half the w grid due to Hermitian symmetry
+          u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
+            u_scaled, v_scaled, w_scaled, vis
+          )
+
+          # UV coordinates on the FFT shifted grid
+          u_grid = (u_scaled * NX) % NX
+          v_grid = (v_scaled * NY) % NY
+          w_grid = (w_scaled - W0) / DW
+
+          # Pixel indices at the start of the kernel
+          u_pixel_start = int(np.round(u_grid)) - HALF_SUPPORT_INT
+          v_pixel_start = int(np.round(v_grid)) - HALF_SUPPORT_INT
+          w_pixel_start = int(np.round(w_grid)) - HALF_SUPPORT_INT
+
+          # Tuple of indices associated with each kernel value in X, Y and Z
+          # Of length kernel.support
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start, True)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start, True)
+          z_indices = es_kernel_positions(KERNEL, NW, w_pixel_start, False)
+
+          # Tuples of kernel values of length kernel.support
+          x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
+          y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
+          z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
+
+          for zfi, zkw in zip(
+            numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
+          ):
+            zi = int(zfi)
+            for xfi, xkw in zip(
+              numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
+            ):
+              xi = int(xfi)
+              for yfi, ykw in zip(
+                numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
+              ):
+                yi = int(yfi)
+                weighted_stokes = apply_weights(vis, xkw * ykw * zkw)
+                accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
+
+    return vis_grid
+
+  return apply_w_impl if wgrid_params.apply_w else no_w_impl
 
 
 @numba.njit(**{**JIT_OPTIONS, "parallel": False})

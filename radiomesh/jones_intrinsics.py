@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from typing import Literal, Tuple
 
+import numpy as np
+import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import overload
 
 from radiomesh.intrinsics import load_data
-from radiomesh.literals import DatumLiteral, SchemaLiteral
+from radiomesh.literals import DatumLiteral, Schema, SchemaLiteral
 from radiomesh.stokes_intrinsics import data_conv_fn
 
 
@@ -18,19 +20,22 @@ class ApplyJones:
 
 
 def maybe_apply_jones(
-  apply_jones_literal,
-  jones_params,
-  data,
-  idx,
+  apply_jones_literal: DatumLiteral[ApplyJones],
+  jones_params: Tuple[npt.NDArray[np.complexfloating], npt.NDArray[np.integer], Schema]
+  | None,
+  data: npt.NDArray,
+  idx: Tuple[int, int, int],
 ):
   pass
 
 
 @overload(maybe_apply_jones, prefer_literal=True)
 def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
-  if not isinstance(apply_jones_literal, DatumLiteral):
+  if not isinstance(apply_jones_literal, DatumLiteral) or not isinstance(
+    (apply_jones := apply_jones_literal.datum_value), ApplyJones
+  ):
     raise RequireLiteralValue(
-      f"'apply_jones_literal' {apply_jones_literal} is not a DatumLiteral"
+      f"'apply_jones_literal' {apply_jones_literal} is not a DatumLiteral[ApplyJones]"
     )
 
   HAVE_JONES_PARAMS = jones_params != types.none
@@ -45,10 +50,9 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
   ):
     raise TypingError(f"'idx' {idx} must be a (time, baseline, channel) index tuple")
 
-  apply_jones_params = apply_jones_literal.datum_value
-  DATA_TYPE = apply_jones_params.data_type
-  POL_SCHEMA = apply_jones_params.pol_schema
-  STOKES_SCHEMA = apply_jones_params.stokes_schema
+  DATA_TYPE = apply_jones.data_type
+  POL_SCHEMA = apply_jones.pol_schema
+  STOKES_SCHEMA = apply_jones.stokes_schema
 
   if not HAVE_JONES_PARAMS:
     # Simple case
