@@ -26,15 +26,12 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 
 
 @register_jitable
-def maybe_conjugate(u, v, w, vis):
-  """Invert uvw and conjugate vis if w < 0.0"""
-  if w < 0.0:
-    u, v, w = -u, -v, -w
+def conj_vis(vis):
+  """Conjugate a tuple of visibilities"""
+  for i, value in enumerate(numba.literal_unroll(vis)):
+    vis = tuple_setitem(vis, i, np.conj(value))
 
-    for i, value in enumerate(numba.literal_unroll(vis)):
-      vis = tuple_setitem(vis, i, np.conj(value))
-
-  return u, v, w, vis
+  return vis
 
 
 @dataclass(slots=True, eq=True, unsafe_hash=True)
@@ -192,12 +189,9 @@ def wgrid_overload(
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
           for d in range(ndir):
-            jones_vis = maybe_apply_jones(
-              JONES_VIS_DATUM, jones_params, vis, idx + (d,)
-            )
-            jones_wgt = maybe_apply_jones(
-              JONES_WGT_DATUM, jones_params, wgt, idx + (d,)
-            )
+            didx = idx + (d,)
+            jones_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
+            jones_wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
             jones_vis = apply_weights(jones_vis, jones_wgt)
 
             for xfi, xkw in zip(
@@ -250,9 +244,10 @@ def wgrid_overload(
           w_scaled = W_SIGN * w * wavelength
 
           # Use only half the w grid due to Hermitian symmetry
-          u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
-            u_scaled, v_scaled, w_scaled, vis
-          )
+          should_conjugate = w_scaled < 0.0
+
+          if should_conjugate:
+            u_scaled, v_scaled, w_scaled = -u_scaled, -v_scaled, -w_scaled
 
           # UV coordinates on the FFT shifted grid
           u_grid = (u_scaled * NX) % NX
@@ -276,13 +271,15 @@ def wgrid_overload(
           z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
 
           for d in range(ndir):
-            jones_vis = maybe_apply_jones(
-              JONES_VIS_DATUM, jones_params, vis, idx + (d,)
-            )
-            jones_weight = maybe_apply_jones(
-              JONES_WGT_DATUM, jones_params, wgt, idx + (d,)
-            )
-            jones_vis = apply_weights(jones_vis, jones_weight)
+            didx = idx + (d,)
+            dir_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
+            dir_weight = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
+            dir_vis = apply_weights(dir_vis, dir_weight)
+
+            # Conjugation of visibilities must occur *after*
+            # application of jones matrices
+            if should_conjugate:
+              dir_vis = conj_vis(dir_vis)
 
             for zfi, zkw in zip(
               numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
@@ -296,7 +293,7 @@ def wgrid_overload(
                   numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
                 ):
                   yi = int(yfi)
-                  weighted_stokes = apply_weights(jones_vis, xkw * ykw * zkw)
+                  weighted_stokes = apply_weights(dir_vis, xkw * ykw * zkw)
                   accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
 
     return vis_grid
