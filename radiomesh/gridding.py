@@ -18,7 +18,7 @@ from radiomesh.intrinsics import (
   check_args,
   load_data,
 )
-from radiomesh.jones_intrinsics import ApplyJones, maybe_apply_jones
+from radiomesh.jones_intrinsics import ApplyJones, maybe_apply_jones, ndirections
 from radiomesh.literals import Datum, DatumLiteral, Schema
 from radiomesh.utils import wgridder_conventions
 
@@ -167,9 +167,6 @@ def wgrid_overload(
 
           vis = load_data(visibilities, idx, NPOL, -1)
           wgt = load_data(weights, idx, NPOL, -1)
-          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
-          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
-          vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
           wavelength = wavelengths[ch]
@@ -193,16 +190,25 @@ def wgrid_overload(
           x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
-          for xfi, xkw in zip(
-            numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
-          ):
-            xi = int(xfi)
-            for yfi, ykw in zip(
-              numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
+          for d in range(ndirections(jones_params)):
+            jones_vis = maybe_apply_jones(
+              JONES_VIS_DATUM, jones_params, vis, idx + (d,)
+            )
+            jones_wgt = maybe_apply_jones(
+              JONES_WGT_DATUM, jones_params, wgt, idx + (d,)
+            )
+            jones_vis = apply_weights(jones_vis, jones_wgt)
+
+            for xfi, xkw in zip(
+              numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
             ):
-              yi = int(yfi)
-              weighted_stokes = apply_weights(vis, xkw * ykw)
-              accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
+              xi = int(xfi)
+              for yfi, ykw in zip(
+                numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
+              ):
+                yi = int(yfi)
+                weighted_stokes = apply_weights(jones_vis, xkw * ykw)
+                accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
 
     return vis_grid
 
@@ -234,9 +240,6 @@ def wgrid_overload(
 
           vis = load_data(visibilities, idx, NPOL, -1)
           wgt = load_data(weights, idx, NPOL, -1)
-          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
-          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
-          vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
           wavelength = wavelengths[ch]
@@ -270,20 +273,29 @@ def wgrid_overload(
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
           z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
 
-          for zfi, zkw in zip(
-            numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
-          ):
-            zi = int(zfi)
-            for xfi, xkw in zip(
-              numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
+          for d in range(ndirections(jones_params)):
+            jones_vis = maybe_apply_jones(
+              JONES_VIS_DATUM, jones_params, vis, idx + (d,)
+            )
+            jones_weight = maybe_apply_jones(
+              JONES_WGT_DATUM, jones_params, wgt, idx + (d,)
+            )
+            jones_vis = apply_weights(jones_vis, jones_weight)
+
+            for zfi, zkw in zip(
+              numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
             ):
-              xi = int(xfi)
-              for yfi, ykw in zip(
-                numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
+              zi = int(zfi)
+              for xfi, xkw in zip(
+                numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
               ):
-                yi = int(yfi)
-                weighted_stokes = apply_weights(vis, xkw * ykw * zkw)
-                accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
+                xi = int(xfi)
+                for yfi, ykw in zip(
+                  numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
+                ):
+                  yi = int(yfi)
+                  weighted_stokes = apply_weights(jones_vis, xkw * ykw * zkw)
+                  accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
 
     return vis_grid
 
