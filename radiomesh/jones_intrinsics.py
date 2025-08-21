@@ -35,6 +35,18 @@ def check_jones_params(jones_params):
       f"types (Array, Array, Schema)"
     )
 
+  if jones_params[0].ndim != 5 or not isinstance(jones_params[0].dtype, types.Complex):
+    raise TypingError(
+      f"The 'jones' {jones_params[0]} array in jones_params "
+      f"must be an (ntime, na, nchan, ndir, npol) complex array"
+    )
+
+  if jones_params[1].ndim != 2 or not isinstance(jones_params[1].dtype, types.Integer):
+    raise TypingError(
+      f"The 'antenna_pair' {jones_params[1]} array in jones_params "
+      f"must be a (nbl, 2) integer array"
+    )
+
 
 def maybe_apply_jones(
   apply_jones_literal: DatumLiteral[ApplyJones],
