@@ -192,13 +192,13 @@ def wgrid_overload(
 
           for d in range(ndir):
             didx = idx + (d,)
-            jones_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
-            jones_wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
-            jones_vis = apply_weights(jones_vis, jones_wgt)
+            dir_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
+            dir_weight = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
+            dir_vis = apply_weights(dir_vis, dir_weight)
 
             for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
               for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
-                weighted_stokes = apply_weights(jones_vis, xkw * ykw)
+                weighted_stokes = apply_weights(dir_vis, xkw * ykw)
                 accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
 
     return vis_grid
