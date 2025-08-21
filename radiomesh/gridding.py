@@ -130,7 +130,7 @@ def wgrid_overload(
   PIXSIZEY = wgrid_params.pixsizey
   W0 = wgrid_params.w0
   DW = wgrid_params.dw
-  U_SIGN, V_SIGN, _, _, _ = wgridder_conventions(0.0, 0.0)
+  U_SIGN, V_SIGN, W_SIGN, _, _ = wgridder_conventions(0.0, 0.0)
 
   JONES_VIS_DATUM = Datum(
     ApplyJones("vis", POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value)
@@ -173,8 +173,8 @@ def wgrid_overload(
 
           # Scaled uv coordinates
           wavelength = wavelengths[ch]
-          u_scaled = u * U_SIGN * wavelength * PIXSIZEX
-          v_scaled = v * V_SIGN * wavelength * PIXSIZEY
+          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
+          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
 
           # UV coordinates on the FFT shifted grid
           u_grid = (u_scaled * NX) % NX
@@ -240,9 +240,9 @@ def wgrid_overload(
 
           # Scaled uv coordinates
           wavelength = wavelengths[ch]
-          u_scaled = u * U_SIGN * wavelength * PIXSIZEX
-          v_scaled = v * V_SIGN * wavelength * PIXSIZEY
-          w_scaled = w * wavelength
+          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
+          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
+          w_scaled = W_SIGN * w * wavelength
 
           # Use only half the w grid due to Hermitian symmetry
           u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
