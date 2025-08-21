@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import reduce
 from typing import Tuple
 
 import numba
@@ -29,15 +28,26 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 @register_jitable
 def maybe_conjugate(u, v, w, vis):
   """Invert uvw and conjugate visibilities if w < 0.0"""
+  out_vis = vis
+
   if w < 0.0:
     u = -u
     v = -v
     w = -w
 
-    for i, value in enumerate(vis):
-      vis = tuple_setitem(vis, i, np.conj(value))
+    for i, value in enumerate(literal_unroll(vis)):
+      out_vis = tuple_setitem(out_vis, i, np.conj(value))
 
-  return u, v, w, vis
+  return u, v, w, out_vis
+
+
+@register_jitable
+def any_flagged(flags):
+  for flag in literal_unroll(flags):
+    if flag != 0:
+      return True
+
+  return False
 
 
 @dataclass(slots=True, eq=True, unsafe_hash=True)
@@ -70,9 +80,6 @@ def wgrid_impl(
   jones_params,
 ):
   pass
-
-
-any_flagged = numba.njit(**JIT_OPTIONS)(lambda a, f: a or f != 0)
 
 
 @overload(wgrid_impl, jit_options=JIT_OPTIONS, prefer_literal=True)
@@ -165,8 +172,7 @@ def wgrid_overload(
         for ch in range(nchan):
           idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
-          vis_flag = load_data(flags, idx, NPOL, -1)
-          if reduce(any_flagged, vis_flag, False):
+          if any_flagged(load_data(flags, idx, NPOL, -1)):
             continue
 
           vis = load_data(visibilities, idx, NPOL, -1)
@@ -234,8 +240,7 @@ def wgrid_overload(
         for ch in range(nchan):
           idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
-          vis_flag = load_data(flags, idx, NPOL, -1)
-          if reduce(any_flagged, vis_flag, False):
+          if any_flagged(load_data(flags, idx, NPOL, -1)):
             continue
 
           vis = load_data(visibilities, idx, NPOL, -1)
