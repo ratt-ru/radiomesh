@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Apply per-direction Jones terms (:pr:`39`)
 * Apply the w term within the numba wgridder (:pr:`38`)
 * Align the numba wgridder with the explicit gridder (:pr:`37`)
 * Pre-generate expressions for converting visibilities, weights and gains to stokes parameters (:pr:`39`)
