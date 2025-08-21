@@ -5,7 +5,7 @@ import numpy as np
 import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue, TypingError
-from numba.extending import overload
+from numba.extending import overload, register_jitable
 
 from radiomesh.intrinsics import load_data
 from radiomesh.literals import DatumLiteral, Schema, SchemaLiteral
@@ -106,6 +106,7 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
   return impl
 
 
+@register_jitable
 def ndirections(jones_params):
   """Infer the number of directions from the jones_params.
 
@@ -113,22 +114,9 @@ def ndirections(jones_params):
   otherwise the number of directions is derived from the shape
   of the jones array which has shape
   :code:`(time, antenna, channel, direction, polarisation)`"""
-  raise NotImplementedError
-
-
-@overload(ndirections)
-def ndirections_overload(jones_params):
-  if jones_params == types.none:
-
-    def impl(jones_params):
-      return 1
+  if jones_params is None:
+    return 1
   else:
-    check_jones_params(jones_params)
-
-    def impl(jones_params):
-      jones = jones_params[0]
-      # (ntime, na, nchan, ndir, npol)
-      assert len(jones.shape) == 5
-      return jones_params[0].shape[3]
-
-  return impl
+    jones = jones_params[0]
+    assert len(jones.shape) == 5
+    return jones.shape[3]
