@@ -27,13 +27,17 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 
 
 @register_jitable
-def conj_vis(vis):
-  """Conjugate a tuple of visibilities"""
-  result = vis
-  for i, value in enumerate(literal_unroll(vis)):
-    result = tuple_setitem(result, i, np.conj(value))
+def maybe_conjugate(u, v, w, vis):
+  """Invert uvw and conjugate visibilities if w < 0.0"""
+  if w < 0.0:
+    u = -u
+    v = -v
+    w = -w
 
-  return result
+    for i, value in enumerate(vis):
+      vis = tuple_setitem(vis, i, np.conj(value))
+
+  return u, v, w, vis
 
 
 @dataclass(slots=True, eq=True, unsafe_hash=True)
@@ -157,7 +161,7 @@ def wgrid_overload(
 
     for t in range(ntime):
       for bl in range(nbl):
-        u, v, _ = load_data(uvw, (t, bl), NUVW, -1)
+        u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
           idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
@@ -170,8 +174,12 @@ def wgrid_overload(
 
           # Scaled uv coordinates
           wavelength = wavelengths[ch]
-          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
-          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
+          u_scaled, v_scaled, _, vis = maybe_conjugate(
+            U_SIGN * u * wavelength * PIXSIZEX,
+            V_SIGN * v * wavelength * PIXSIZEY,
+            W_SIGN * w * wavelength,
+            vis,
+          )
 
           # UV coordinates on the FFT shifted grid
           u_grid = (u_scaled * NX) % NX
@@ -233,17 +241,16 @@ def wgrid_overload(
           vis = load_data(visibilities, idx, NPOL, -1)
           wgt = load_data(weights, idx, NPOL, -1)
 
-          # Scaled uv coordinates
           wavelength = wavelengths[ch]
-          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
-          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
-          w_scaled = W_SIGN * w * wavelength
 
-          # Use only half the w grid due to Hermitian symmetry
-          should_conjugate = w_scaled < 0.0
-
-          if should_conjugate:
-            u_scaled, v_scaled, w_scaled = -u_scaled, -v_scaled, -w_scaled
+          # Scale uv coordinates and only
+          # use half the w grid due to Hermitian symmetry
+          u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
+            U_SIGN * u * wavelength * PIXSIZEX,
+            V_SIGN * v * wavelength * PIXSIZEY,
+            W_SIGN * w * wavelength,
+            vis,
+          )
 
           # UV coordinates on the FFT shifted grid
           u_grid = (u_scaled * NX) % NX
@@ -271,11 +278,6 @@ def wgrid_overload(
             dir_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
             dir_weight = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
             dir_vis = apply_weights(dir_vis, dir_weight)
-
-            # Conjugation of visibilities must occur *after*
-            # application of jones matrices
-            if should_conjugate:
-              dir_vis = conj_vis(dir_vis)
 
             for zi, zkw in zip(literal_unroll(z_indices), literal_unroll(z_kernel)):
               for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):

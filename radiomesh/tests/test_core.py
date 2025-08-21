@@ -59,14 +59,18 @@ def explicit_gridder(
         if flag[t, bl, chan].any():
           continue
         # convert to corrected Stokes vis and weights
-        vis = vis_func(gp[chan, 0], gq[chan, 0], weight[t, bl, chan], data[t, bl, chan])
-        wgt = wgt_func(gp[chan, 0], gq[chan, 0], weight[t, bl, chan])
+        vis = data[t, bl, chan]
+        wgt = weight[t, bl, chan]
         u, v, w = uvw[t, bl]
         if w < 0:
           u *= -1
           v *= -1
           w *= -1
           vis = np.conjugate(vis)
+
+        vis = vis_func(gp[chan, 0], gq[chan, 0], wgt, vis)
+        wgt = wgt_func(gp[chan, 0], gq[chan, 0], wgt)
+
         phase = freq[chan] / LIGHTSPEED * (x * u + y * v - w * nm1)
         cphase = np.exp(2j * np.pi * phase)
         for corr in range(ncorr):
