@@ -150,6 +150,7 @@ def wgrid_overload(
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
+    ndir = ndirections(jones_params)
 
     wavelengths = frequencies / LIGHTSPEED
 
@@ -190,7 +191,7 @@ def wgrid_overload(
           x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
-          for d in range(ndirections(jones_params)):
+          for d in range(ndir):
             jones_vis = maybe_apply_jones(
               JONES_VIS_DATUM, jones_params, vis, idx + (d,)
             )
@@ -223,6 +224,7 @@ def wgrid_overload(
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
+    ndir = ndirections(jones_params)
 
     wavelengths = frequencies / LIGHTSPEED
 
@@ -273,7 +275,7 @@ def wgrid_overload(
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
           z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
 
-          for d in range(ndirections(jones_params)):
+          for d in range(ndir):
             jones_vis = maybe_apply_jones(
               JONES_VIS_DATUM, jones_params, vis, idx + (d,)
             )

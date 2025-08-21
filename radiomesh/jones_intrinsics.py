@@ -107,6 +107,12 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
 
 
 def ndirections(jones_params):
+  """Infer the number of directions from the jones_params.
+
+  If jones_params is None, then 1 will be returned,
+  otherwise the number of directions is derived from the shape
+  of the jones array which has shape
+  :code:`(time, antenna, channel, direction, polarisation)`"""
   raise NotImplementedError
 
 
