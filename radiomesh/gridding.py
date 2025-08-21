@@ -29,10 +29,11 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 @register_jitable
 def conj_vis(vis):
   """Conjugate a tuple of visibilities"""
+  result = vis
   for i, value in enumerate(literal_unroll(vis)):
-    vis = tuple_setitem(vis, i, np.conj(value))
+    result = tuple_setitem(result, i, np.conj(value))
 
-  return vis
+  return result
 
 
 @dataclass(slots=True, eq=True, unsafe_hash=True)
