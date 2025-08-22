@@ -5,10 +5,10 @@ import numba
 import numpy as np
 import numpy.typing as npt
 from numba import literal_unroll
-from numba.core import types
+from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.cpython.unsafe.tuple import tuple_setitem
-from numba.extending import overload, register_jitable
+from numba.extending import intrinsic, overload, register_jitable
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.es_kernel import ESKernel, es_kernel_positions, eval_es_kernel
@@ -23,6 +23,36 @@ from radiomesh.literals import Datum, DatumLiteral, Schema
 from radiomesh.utils import wgridder_conventions
 
 JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": True}
+
+
+@intrinsic(prefer_literal=True)
+def fill_tuple(typginctx, N, value):
+  if not isinstance(N, types.IntegerLiteral):
+    raise RequireLiteralValue(f"{N}")
+
+  sig = types.UniTuple(value, N.literal_value)(N, value)
+
+  def codegen(context, builder, signature, args):
+    _, value = args
+    return_type = signature.return_type
+    llvm_ret_type = context.get_value_type(signature.return_type)
+    return_tuple = cgutils.get_null_value(llvm_ret_type)
+
+    for i in range(len(return_type)):
+      return_tuple = builder.insert_value(return_tuple, value, i)
+
+    return return_tuple
+
+  return sig, codegen
+
+
+@register_jitable
+def accumulate_vis(target, source):
+  result = target
+  for i, s in enumerate(literal_unroll(source)):
+    result = tuple_setitem(result, i, s + result[i])
+
+  return result
 
 
 @register_jitable
@@ -64,6 +94,7 @@ class WGridderParameters:
   stokes_schema: Schema
   apply_w: bool = True
   apply_fftshift: bool = True
+  jones_dir_sum: bool = False
 
   def __post_init__(self):
     if isinstance(self.kernel, float):
@@ -292,7 +323,88 @@ def wgrid_overload(
 
     return vis_grid
 
-  return apply_w_impl if wgrid_params.apply_w else no_w_impl
+  def apply_w_dir_sum_impl(
+    uvw,
+    visibilities,
+    weights,
+    flags,
+    frequencies,
+    wgrid_literal_params,
+    jones_params,
+  ):
+    check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
+    ntime, nbl, nchan, _ = visibilities.shape
+    ndir = ndirections(jones_params)
+
+    wavelengths = frequencies / LIGHTSPEED
+
+    vis_grid = np.zeros((NSTOKES, NW, NX, NY), visibilities.dtype)
+
+    for t in range(ntime):
+      for bl in range(nbl):
+        u, v, w = load_data(uvw, (t, bl), NUVW, -1)
+        for ch in range(nchan):
+          idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
+          # Return early if any visibility is flagged
+          if any_flagged(load_data(flags, idx, NPOL, -1)):
+            continue
+
+          vis = load_data(visibilities, idx, NPOL, -1)
+          wgt = load_data(weights, idx, NPOL, -1)
+
+          wavelength = wavelengths[ch]
+
+          # Scale uv coordinates and only
+          # use half the w grid due to Hermitian symmetry
+          u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
+            U_SIGN * u * wavelength * PIXSIZEX,
+            V_SIGN * v * wavelength * PIXSIZEY,
+            W_SIGN * w * wavelength,
+            vis,
+          )
+
+          # UV coordinates on the FFT shifted grid
+          u_grid = (u_scaled * NX) % NX
+          v_grid = (v_scaled * NY) % NY
+          w_grid = (w_scaled - W0) / DW
+
+          # Pixel indices at the start of the kernel
+          u_pixel_start = int(np.round(u_grid)) - HALF_SUPPORT_INT
+          v_pixel_start = int(np.round(v_grid)) - HALF_SUPPORT_INT
+          w_pixel_start = int(np.round(w_grid)) - HALF_SUPPORT_INT
+
+          # Tuple of indices associated with each kernel value in X, Y and Z
+          # Of length kernel.support
+          x_indices = es_kernel_positions(KERNEL, NX, u_pixel_start, True)
+          y_indices = es_kernel_positions(KERNEL, NY, v_pixel_start, True)
+          z_indices = es_kernel_positions(KERNEL, NW, w_pixel_start, False)
+
+          # Tuples of kernel values of length kernel.support
+          x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
+          y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
+          z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
+
+          dir_vis_sum = fill_tuple(NPOL, 0 + 0j)
+
+          for d in range(ndir):
+            didx = idx + (d,)
+            dir_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
+            dir_weight = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
+            dir_vis = apply_weights(dir_vis, dir_weight)
+            dir_vis_sum = accumulate_vis(dir_vis_sum, dir_vis)
+
+          for zi, zkw in zip(literal_unroll(z_indices), literal_unroll(z_kernel)):
+            for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
+              for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
+                weighted_stokes = apply_weights(dir_vis_sum, xkw * ykw * zkw)
+                accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
+
+    return vis_grid
+
+  if not wgrid_params.apply_w:
+    return no_w_impl
+
+  return apply_w_dir_sum_impl if wgrid_params.jones_dir_sum else apply_w_impl
 
 
 @numba.njit(**{**JIT_OPTIONS, "parallel": False})
