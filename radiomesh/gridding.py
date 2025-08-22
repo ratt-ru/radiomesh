@@ -164,7 +164,7 @@ def wgrid_overload(
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
+    vis_grid = np.zeros((NSTOKES, ndir, NX, NY), visibilities.dtype)
 
     for t in range(ntime):
       for bl in range(nbl):
@@ -213,7 +213,7 @@ def wgrid_overload(
             for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
               for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
                 weighted_stokes = apply_weights(dir_vis, xkw * ykw)
-                accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
+                accumulate_data(weighted_stokes, vis_grid, (d, xi, yi), 0)
 
     return vis_grid
 
@@ -232,7 +232,7 @@ def wgrid_overload(
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NW, NX, NY), visibilities.dtype)
+    vis_grid = np.zeros((NSTOKES, ndir, NW, NX, NY), visibilities.dtype)
 
     for t in range(ntime):
       for bl in range(nbl):
@@ -288,7 +288,7 @@ def wgrid_overload(
               for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
                 for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
                   weighted_stokes = apply_weights(dir_vis, xkw * ykw * zkw)
-                  accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
+                  accumulate_data(weighted_stokes, vis_grid, (d, zi, xi, yi), 0)
 
     return vis_grid
 
