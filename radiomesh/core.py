@@ -111,13 +111,23 @@ def grid_data(
       for chan in range(nchan):
         if flag[t, bl, chan].any():
           continue
-        wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
-        vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
+
+        wgt = wgt_row[chan]
+        vis = vis_row[chan]
 
         # current uv coords
         chan_normfreq = normfreq[chan]
         u_tmp = uvw_row[0] * chan_normfreq * usign * cellx
         v_tmp = uvw_row[1] * chan_normfreq * vsign * celly
+        w_tmp = uvw_row[2] * chan_normfreq
+
+        if w_tmp < 0.0:
+          u_tmp = -u_tmp
+          v_tmp = -v_tmp
+          vis = np.conj(vis)
+
+        wgt = wgt_func(gp[chan], gq[chan], wgt)
+        vis = vis_func(gp[chan], gq[chan], wgt, vis)
 
         # uv coordinates on the FFT shifted grid
         ug = (ngx * u_tmp) % ngx
@@ -272,8 +282,9 @@ def wgrid_data(
       for chan in range(nchan):
         if flag[t, bl, chan].any():
           continue
-        wgt = wgt_func(gp[chan], gq[chan], wgt_row[chan])
-        vis = vis_func(gp[chan], gq[chan], wgt_row[chan], vis_row[chan])
+
+        wgt = wgt_row[chan]
+        vis = vis_row[chan]
 
         # current uv coords
         chan_normfreq = normfreq[chan]
@@ -286,6 +297,9 @@ def wgrid_data(
           v_tmp = -v_tmp
           w_tmp = -w_tmp
           vis = np.conjugate(vis)
+
+        wgt = wgt_func(gp[chan], gq[chan], wgt)
+        vis = vis_func(gp[chan], gq[chan], wgt, vis)
 
         # uv coordinates on the FFT shifted grid
         ug = (ngx * u_tmp) % ngx

@@ -58,19 +58,22 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
     apply_w=apply_w,
   )
 
-  ndir = 1
-  jones = np.zeros((ntime, na, nchan, ndir, npol), vis.dtype)
+  ndir = 5 if apply_jones else 1
+  jones = np.zeros((ntime, na, nchan, npol), vis.dtype)
   jones[..., 0] = 1.0 + 0j
   jones[..., -1] = 1.0 + 0j
   if apply_jones:
     jones += 0.05 * (rng.normal(size=jones.shape) + 1j * rng.normal(size=jones.shape))
+    # wgrid_data and grid_data only apply the first jones matrix
+    jones = np.stack([jones] * ndir, axis=3)
+    assert jones.shape == (ntime, na, nchan, ndir, npol)
     jones_params = (jones, antenna_pairs, wgrid_params.pol_schema)
   else:
     jones_params = None
 
   vis_grid = wgrid(uvw, vis, weights, flags, freqs, Datum(wgrid_params), jones_params)
 
-  expected_shape = (len(wgrid_params.stokes_schema),)
+  expected_shape = (len(wgrid_params.stokes_schema), ndir)
   expected_shape += ((nw,) if apply_w else ()) + (nx, ny)
   assert vis_grid.shape == expected_shape
   assert vis_grid.dtype == vis.dtype
@@ -132,4 +135,7 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
       vsign=vsign,
     )
 
-  np.testing.assert_allclose(vis_grid, result)
+  # wgrid_data and grid_data only apply the first jones matrix
+  # which we've stacked ndir times in the call to wgrid
+  for d in range(ndir):
+    np.testing.assert_allclose(vis_grid[:, d, ...], result)

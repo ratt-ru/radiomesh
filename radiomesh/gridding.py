@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from functools import reduce
 from typing import Tuple
 
 import numba
 import numpy as np
 import numpy.typing as npt
+from numba import literal_unroll
 from numba.core import types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.cpython.unsafe.tuple import tuple_setitem
@@ -18,7 +18,7 @@ from radiomesh.intrinsics import (
   check_args,
   load_data,
 )
-from radiomesh.jones_intrinsics import ApplyJones, maybe_apply_jones
+from radiomesh.jones_intrinsics import ApplyJones, maybe_apply_jones, ndirections
 from radiomesh.literals import Datum, DatumLiteral, Schema
 from radiomesh.utils import wgridder_conventions
 
@@ -27,14 +27,27 @@ JIT_OPTIONS = {"parallel": False, "nogil": True, "cache": False, "fastmath": Tru
 
 @register_jitable
 def maybe_conjugate(u, v, w, vis):
-  """Invert uvw and conjugate vis if w < 0.0"""
+  """Invert uvw and conjugate visibilities if w < 0.0"""
+  out_vis = vis
+
   if w < 0.0:
-    u, v, w = -u, -v, -w
+    u = -u
+    v = -v
+    w = -w
 
-    for i, value in enumerate(numba.literal_unroll(vis)):
-      vis = tuple_setitem(vis, i, np.conj(value))
+    for i, value in enumerate(literal_unroll(vis)):
+      out_vis = tuple_setitem(out_vis, i, np.conj(value))
 
-  return u, v, w, vis
+  return u, v, w, out_vis
+
+
+@register_jitable
+def any_flagged(flags):
+  for flag in literal_unroll(flags):
+    if flag != 0:
+      return True
+
+  return False
 
 
 @dataclass(slots=True, eq=True, unsafe_hash=True)
@@ -67,9 +80,6 @@ def wgrid_impl(
   jones_params,
 ):
   pass
-
-
-any_flagged = numba.njit(**JIT_OPTIONS)(lambda a, f: a or f != 0)
 
 
 @overload(wgrid_impl, jit_options=JIT_OPTIONS, prefer_literal=True)
@@ -150,31 +160,32 @@ def wgrid_overload(
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
+    ndir = ndirections(jones_params)
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NX, NY), visibilities.dtype)
+    vis_grid = np.zeros((NSTOKES, ndir, NX, NY), visibilities.dtype)
 
-    for t in numba.prange(ntime):
+    for t in range(ntime):
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
           idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
-          vis_flag = load_data(flags, idx, NPOL, -1)
-          if reduce(any_flagged, vis_flag, False):
+          if any_flagged(load_data(flags, idx, NPOL, -1)):
             continue
 
           vis = load_data(visibilities, idx, NPOL, -1)
           wgt = load_data(weights, idx, NPOL, -1)
-          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
-          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
-          vis = apply_weights(vis, wgt)
 
           # Scaled uv coordinates
           wavelength = wavelengths[ch]
-          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
-          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
+          u_scaled, v_scaled, _, vis = maybe_conjugate(
+            U_SIGN * u * wavelength * PIXSIZEX,
+            V_SIGN * v * wavelength * PIXSIZEY,
+            W_SIGN * w * wavelength,
+            vis,
+          )
 
           # UV coordinates on the FFT shifted grid
           u_grid = (u_scaled * NX) % NX
@@ -193,16 +204,16 @@ def wgrid_overload(
           x_kernel = eval_es_kernel(KERNEL, u_grid, u_pixel_start)
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
 
-          for xfi, xkw in zip(
-            numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
-          ):
-            xi = int(xfi)
-            for yfi, ykw in zip(
-              numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
-            ):
-              yi = int(yfi)
-              weighted_stokes = apply_weights(vis, xkw * ykw)
-              accumulate_data(weighted_stokes, vis_grid, (xi, yi), 0)
+          for d in range(ndir):
+            didx = idx + (d,)
+            dir_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
+            dir_weight = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
+            dir_vis = apply_weights(dir_vis, dir_weight)
+
+            for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
+              for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
+                weighted_stokes = apply_weights(dir_vis, xkw * ykw)
+                accumulate_data(weighted_stokes, vis_grid, (d, xi, yi), 0)
 
     return vis_grid
 
@@ -217,36 +228,33 @@ def wgrid_overload(
   ):
     check_args(uvw, visibilities, weights, flags, frequencies, NPOL)
     ntime, nbl, nchan, _ = visibilities.shape
+    ndir = ndirections(jones_params)
 
     wavelengths = frequencies / LIGHTSPEED
 
-    vis_grid = np.zeros((NSTOKES, NW, NX, NY), visibilities.dtype)
+    vis_grid = np.zeros((NSTOKES, ndir, NW, NX, NY), visibilities.dtype)
 
-    for t in numba.prange(ntime):
+    for t in range(ntime):
       for bl in range(nbl):
         u, v, w = load_data(uvw, (t, bl), NUVW, -1)
         for ch in range(nchan):
           idx = (t, bl, ch)  # Indexing tuple for use in intrinsics
           # Return early if any visibility is flagged
-          vis_flag = load_data(flags, idx, NPOL, -1)
-          if reduce(any_flagged, vis_flag, False):
+          if any_flagged(load_data(flags, idx, NPOL, -1)):
             continue
 
           vis = load_data(visibilities, idx, NPOL, -1)
           wgt = load_data(weights, idx, NPOL, -1)
-          vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, idx)
-          wgt = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, idx)
-          vis = apply_weights(vis, wgt)
 
-          # Scaled uv coordinates
           wavelength = wavelengths[ch]
-          u_scaled = U_SIGN * u * wavelength * PIXSIZEX
-          v_scaled = V_SIGN * v * wavelength * PIXSIZEY
-          w_scaled = W_SIGN * w * wavelength
 
-          # Use only half the w grid due to Hermitian symmetry
+          # Scale uv coordinates and only
+          # use half the w grid due to Hermitian symmetry
           u_scaled, v_scaled, w_scaled, vis = maybe_conjugate(
-            u_scaled, v_scaled, w_scaled, vis
+            U_SIGN * u * wavelength * PIXSIZEX,
+            V_SIGN * v * wavelength * PIXSIZEY,
+            W_SIGN * w * wavelength,
+            vis,
           )
 
           # UV coordinates on the FFT shifted grid
@@ -270,20 +278,17 @@ def wgrid_overload(
           y_kernel = eval_es_kernel(KERNEL, v_grid, v_pixel_start)
           z_kernel = eval_es_kernel(KERNEL, w_grid, w_pixel_start)
 
-          for zfi, zkw in zip(
-            numba.literal_unroll(z_indices), numba.literal_unroll(z_kernel)
-          ):
-            zi = int(zfi)
-            for xfi, xkw in zip(
-              numba.literal_unroll(x_indices), numba.literal_unroll(x_kernel)
-            ):
-              xi = int(xfi)
-              for yfi, ykw in zip(
-                numba.literal_unroll(y_indices), numba.literal_unroll(y_kernel)
-              ):
-                yi = int(yfi)
-                weighted_stokes = apply_weights(vis, xkw * ykw * zkw)
-                accumulate_data(weighted_stokes, vis_grid, (zi, xi, yi), 0)
+          for d in range(ndir):
+            didx = idx + (d,)
+            dir_vis = maybe_apply_jones(JONES_VIS_DATUM, jones_params, vis, didx)
+            dir_weight = maybe_apply_jones(JONES_WGT_DATUM, jones_params, wgt, didx)
+            dir_vis = apply_weights(dir_vis, dir_weight)
+
+            for zi, zkw in zip(literal_unroll(z_indices), literal_unroll(z_kernel)):
+              for xi, xkw in zip(literal_unroll(x_indices), literal_unroll(x_kernel)):
+                for yi, ykw in zip(literal_unroll(y_indices), literal_unroll(y_kernel)):
+                  weighted_stokes = apply_weights(dir_vis, xkw * ykw * zkw)
+                  accumulate_data(weighted_stokes, vis_grid, (d, zi, xi, yi), 0)
 
     return vis_grid
 

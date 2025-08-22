@@ -5,7 +5,7 @@ import numpy as np
 import numpy.typing as npt
 from numba.core import types
 from numba.core.errors import RequireLiteralValue, TypingError
-from numba.extending import overload
+from numba.extending import overload, register_jitable
 
 from radiomesh.intrinsics import load_data
 from radiomesh.literals import DatumLiteral, Schema, SchemaLiteral
@@ -17,6 +17,35 @@ class ApplyJones:
   data_type: Literal["vis", "weight"]
   pol_schema: Tuple[str, ...]
   stokes_schema: Tuple[str, ...]
+
+
+def check_jones_params(jones_params):
+  """Check the jones_params numba type"""
+  if (
+    not isinstance(jones_params, types.Tuple)
+    or len(jones_params) != 3
+    or not all(
+      isinstance(jp, types.Array)
+      for jp in jones_params[:2] or not isinstance(jones_params[2], SchemaLiteral)
+    )
+  ):
+    raise TypingError(
+      f"'jones_params' {jones_params} must be None "
+      f"or a (jones, antenna_pairs, schema) tuple of "
+      f"types (Array, Array, Schema)"
+    )
+
+  if jones_params[0].ndim != 5 or not isinstance(jones_params[0].dtype, types.Complex):
+    raise TypingError(
+      f"The 'jones' {jones_params[0]} array in jones_params "
+      f"must be an (ntime, na, nchan, ndir, npol) complex array"
+    )
+
+  if jones_params[1].ndim != 2 or not isinstance(jones_params[1].dtype, types.Integer):
+    raise TypingError(
+      f"The 'antenna_pair' {jones_params[1]} array in jones_params "
+      f"must be a (nbl, 2) integer array"
+    )
 
 
 def maybe_apply_jones(
@@ -45,10 +74,12 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
 
   if (
     not isinstance(idx, types.UniTuple)
-    or len(idx) != 3
+    or len(idx) != 4
     or not all(isinstance(i, types.Integer) for i in idx)
   ):
-    raise TypingError(f"'idx' {idx} must be a (time, baseline, channel) index tuple")
+    raise TypingError(
+      f"'idx' {idx} must be a " f"(time, baseline, channel, direction) index tuple"
+    )
 
   DATA_TYPE = apply_jones.data_type
   POL_SCHEMA = apply_jones.pol_schema
@@ -63,30 +94,17 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
     # Load in the jones term associated
     # with each baseline's antenna pair
     # and apply them to the data
-    if (
-      not isinstance(jones_params, types.Tuple)
-      or len(jones_params) != 3
-      or not all(
-        isinstance(jp, types.Array)
-        for jp in jones_params[:2] or not isinstance(jones_params[2], SchemaLiteral)
-      )
-    ):
-      raise TypingError(
-        f"'jones_params' {jones_params} must be None "
-        f"or a (jones, antenna_pairs, schema) tuple of "
-        f"types (Array, Array, Schema)"
-      )
-
+    check_jones_params(jones_params)
     JONES_SCHEMA = jones_params[2].literal_value
     NJONES = len(JONES_SCHEMA)
 
     def impl(apply_jones_literal, jones_params, data, idx):
-      t, bl, ch = idx
+      t, bl, ch, d = idx
       jones, antenna_pairs, _ = jones_params
       a1 = antenna_pairs[bl, 0]
       a2 = antenna_pairs[bl, 1]
-      j1 = load_data(jones, (t, a1, ch, 0), NJONES, -1)
-      j2 = load_data(jones, (t, a2, ch, 0), NJONES, -1)
+      j1 = load_data(jones, (t, a1, ch, d), NJONES, -1)
+      j2 = load_data(jones, (t, a2, ch, d), NJONES, -1)
       return data_conv_fn(
         data,
         j1,
@@ -98,3 +116,19 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
       )
 
   return impl
+
+
+@register_jitable
+def ndirections(jones_params):
+  """Infer the number of directions from the jones_params.
+
+  If jones_params is None, then 1 will be returned,
+  otherwise the number of directions is derived from the
+  jones array whose shape has the form
+  :code:`(time, antenna, channel, direction, polarisation)`"""
+  if jones_params is None:
+    return 1
+  else:
+    jones = jones_params[0]
+    assert len(jones.shape) == 5
+    return jones.shape[3]
