@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Implement atomic spin-locks (:pr:`46`)
+* Ignore xarray-ms FrameConversionWarnings (:pt:`40`)
 * Apply per-direction Jones terms (:pr:`39`)
 * Apply the w term within the numba wgridder (:pr:`38`)
 * Align the numba wgridder with the explicit gridder (:pr:`37`)
