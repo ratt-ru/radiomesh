@@ -93,6 +93,7 @@ def taper_trapz(domain, alpha=5, beta=2.3, mu=0.5):
 
 
 @pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
+@pmfw("ignore::xarray_ms.errors.FrameConversionWarning")
 def test_tapers(ms_name):
   """
   Compare Gauss-Legendre integration of kernel to trapz
@@ -165,6 +166,7 @@ def test_tapers(ms_name):
 @pmp("fov", (50.0,))
 @pmp("precision", ("single",))
 @pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
+@pmfw("ignore::xarray_ms.errors.FrameConversionWarning")
 def test_grid_data(fov, precision, ms_name):
   rng = np.random.default_rng(seed=42)
   if precision == "single":
@@ -252,6 +254,7 @@ def test_grid_data(fov, precision, ms_name):
 
 
 @pmfw("ignore::xarray_ms.errors.ImputedMetadataWarning")
+@pmfw("ignore::xarray_ms.errors.FrameConversionWarning")
 @pmp("fov", (50.0,))
 @pmp("precision", ("single",))
 def test_wgrid_data(fov, precision, ms_name):
