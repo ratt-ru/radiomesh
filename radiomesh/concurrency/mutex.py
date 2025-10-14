@@ -1,10 +1,16 @@
+"""This module contains code for some simple atomic spinlocks
+
+See the discussion here
+https://numba.discourse.group/t/phi-node-error-when-creating-a-while-loop-for-an-atomic-spinlock/3046
+"""
+
 import ctypes
 
 import numba
 import numpy as np
 from llvmlite import ir
 from numba.core import types
-from numba.core.errors import TypingError
+from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import intrinsic
 
 try:
@@ -16,8 +22,19 @@ os_yield_fn = libc.sched_yield
 os_yield_fn.argtypes = []
 
 
-@intrinsic
-def lock(typingctx, lock: types.Array, idx: types.UniTuple):
+@intrinsic(prefer_literal=True)
+def lock_op(
+  typingctx, lock: types.Array, idx: types.UniTuple, operation: types.StringLiteral
+):
+  if not isinstance(operation, types.StringLiteral) or operation.literal_value not in {
+    "lock",
+    "unlock",
+  }:
+    raise RequireLiteralValue(
+      f"'operation' {operation} must be a StringLiteral "
+      f"set to either lock or unlock"
+    )
+
   if not isinstance(lock, types.Array) or not isinstance(lock.dtype, types.Integer):
     raise TypingError(f"lock {lock} must be an Array of integers")
 
@@ -28,18 +45,19 @@ def lock(typingctx, lock: types.Array, idx: types.UniTuple):
   ):
     raise TypingError(f"idx {idx} must be a Tuple of length {lock.ndim} integers")
 
-  sig = types.bool(lock, idx)
+  sig = types.bool(lock, idx, operation)
 
-  def yield_wrapper():
-    print("Yielding")
+  def yield_wrapper_idx(i):
     os_yield_fn()
 
   def codegen(context, builder, signature, args):
-    lock, idx = args
-    lock_type, idx_type = signature.args
+    lock, idx, _ = args
+    lock_type, idx_type, _ = signature.args
     llvm_lock_type = context.get_value_type(lock_type.dtype)
     lock_array = context.make_array(lock_type)(context, builder, lock)
 
+    index_type = types.int64
+    ll_index_type = context.get_value_type(index_type)
     native_idx = [builder.extract_value(idx, i) for i in range(len(idx_type))]
     out_ptr = builder.gep(lock_array.data, native_idx)
 
@@ -48,31 +66,42 @@ def lock(typingctx, lock: types.Array, idx: types.UniTuple):
     loop_end = builder.append_basic_block(name="lock.while.end")
 
     # Save the starting block and branch to the conditional block
-    # start_block = builder.basic_block
+    start_block = builder.block
     builder.branch(loop_cond)
 
+    if operation.literal_value == "lock":
+      pre_xchg_value = ir.Constant(llvm_lock_type, 0)
+      post_xchg_value = ir.Constant(llvm_lock_type, 1)
+    elif operation.literal_value == "unlock":
+      pre_xchg_value = ir.Constant(llvm_lock_type, 1)
+      post_xchg_value = ir.Constant(llvm_lock_type, 0)
+    else:
+      raise ValueError(f"Invalid operation.literal_value " f"{operation.literal_value}")
+
     with builder.goto_block(loop_cond):
-      # count = builder.phi(ir.IntType(64), name="lock.while.index")
+      count_phi = builder.phi(ll_index_type, name="lock.while.index")
       xchng_result = builder.cmpxchg(
         out_ptr,
-        ir.Constant(llvm_lock_type, 0),
-        ir.Constant(llvm_lock_type, 1),
+        pre_xchg_value,
+        post_xchg_value,
         ordering="acquire",
         failordering="monotonic",
       )
-      # old_value = builder.extract_value(xchng_result, 0)
       success = builder.extract_value(xchng_result, 1)
       pred = builder.icmp_signed("==", success, success.type(1))
       builder.cbranch(pred, loop_end, loop_body)
 
     with builder.goto_block(loop_body):
-      # next_count = builder.add(count, count.type(1))
-      context.compile_internal(builder, yield_wrapper, types.none(), [])
+      next_count = builder.add(count_phi, count_phi.type(1))
+      context.compile_internal(
+        builder, yield_wrapper_idx, types.none(index_type), [next_count]
+      )
+      branch_block = builder.block
       builder.branch(loop_cond)
 
     # Add incoming values to the PHI node
-    # count.add_incoming(count.type(0), start_block) # From the entry block
-    # count.add_incoming(next_count, loop_body) # From the loop body block
+    count_phi.add_incoming(count_phi.type(0), start_block)  # From the entry block
+    count_phi.add_incoming(next_count, branch_block)  # From the loop body block
 
     builder.position_at_end(loop_end)
     return ir.Constant(ir.IntType(1), 1)
@@ -81,9 +110,20 @@ def lock(typingctx, lock: types.Array, idx: types.UniTuple):
 
 
 if __name__ == "__main__":
+  """Test script"""
 
   @numba.njit(nogil=True)
-  def f(a, i):
-    return lock(a, i)
+  def lock_index(a, i):
+    return lock_op(a, i, "lock")
 
-  print(f(np.full(10, 1, np.int32), (0,)))
+  @numba.njit(nogil=True)
+  def unlock_index(a, i):
+    return lock_op(a, i, "unlock")
+
+  locks = np.full(10, 0, np.int32)
+
+  print(lock_index(locks, (0,)))
+  print(lock_index(locks, (1,)))
+  print(unlock_index(locks, (0,)))
+  print(lock_index(locks, (0,)))
+  print(unlock_index(locks, (1,)))
