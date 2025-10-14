@@ -125,7 +125,8 @@ def wgrid_overload(
   if not (apply_fftshift := wgrid_params.apply_fftshift):
     raise NotImplementedError(f"wgrid_params.apply_fftshift={apply_fftshift}")
 
-  KERNEL = Datum(wgrid_params.kernel)
+  kernel = wgrid_params.kernel
+  KERNEL = Datum(kernel)
   HALF_SUPPORT_INT = wgrid_params.kernel.half_support_int
   POL_SCHEMA_DATUM = Datum(wgrid_params.pol_schema)
   STOKES_SCHEMA_DATUM = Datum(wgrid_params.stokes_schema)
@@ -133,14 +134,36 @@ def wgrid_overload(
   NPOL = len(POL_SCHEMA_DATUM.value)
   NUVW = len(["U", "V", "W"])
 
-  NX = wgrid_params.nx
-  NY = wgrid_params.ny
+  NX = NU = wgrid_params.nx
+  NY = NV = wgrid_params.ny
   NW = wgrid_params.nw
+  NSAFE = kernel.support + 1 // 2
   PIXSIZEX = wgrid_params.pixsizex
   PIXSIZEY = wgrid_params.pixsizey
   W0 = wgrid_params.w0
   DW = wgrid_params.dw
   U_SIGN, V_SIGN, W_SIGN, _, _ = wgridder_conventions(0.0, 0.0)
+  # The following replicates ducc0::detail_gridder::Wgridder logic
+  U_SHIFT = kernel.support * (-0.5) + 1 + NU
+  V_SHIFT = kernel.support * (-0.5) + 1 + NV
+  MAX_IU0 = (NU + NSAFE) - kernel.support
+  MAX_IV0 = (NU + NSAFE) - kernel.support
+
+  @register_jitable
+  def getpix(u_in, v_in):
+    u = u_in - PIXSIZEX
+    u = (u - np.floor(u)) * NU
+    iu0 = min(int(u + U_SHIFT) - int(NU), MAX_IU0)
+    u -= iu0
+    v = v_in - PIXSIZEX
+    v = (v - np.floor(v)) * NV
+    iv0 = min(int(v + V_SHIFT) - int(NV), MAX_IV0)
+    v -= iv0
+    return u, v, iu0, iv0
+
+  @register_jitable
+  def uvwidx():
+    pass
 
   JONES_VIS_DATUM = Datum(
     ApplyJones("vis", POL_SCHEMA_DATUM.value, STOKES_SCHEMA_DATUM.value)
