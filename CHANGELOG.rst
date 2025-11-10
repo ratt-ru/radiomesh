@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Change license to BSD3 (:pr:`52`)
 * Implement atomic spin-locks (:pr:`46`)
 * Ignore xarray-ms FrameConversionWarnings (:pt:`40`)
 * Apply per-direction Jones terms (:pr:`39`)
