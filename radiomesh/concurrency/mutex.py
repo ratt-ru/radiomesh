@@ -9,7 +9,7 @@ import ctypes
 import numba
 import numpy as np
 from llvmlite import ir
-from numba.core import types
+from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import intrinsic
 
@@ -21,9 +21,101 @@ except OSError:
 os_yield_fn = libc.sched_yield
 os_yield_fn.argtypes = []
 
+ATOMIC_LOCK_TYPE = types.CPointer(types.uint8)
+
 
 @intrinsic(prefer_literal=True)
-def lock_op(
+def atomic_lock(typingctx):
+  """Allocates an integer suitable for use as an atomic lock
+  on the stack and returns a pointer to that integer"""
+
+  def codegen(context, builder, signature, args):
+    llvm_lock_type = context.get_value_type(ATOMIC_LOCK_TYPE.dtype)
+    ptr = cgutils.alloca_once(builder, llvm_lock_type)
+    builder.store(ir.Constant(llvm_lock_type, 0), ptr)
+    return ptr
+
+  return ATOMIC_LOCK_TYPE(), codegen
+
+
+@intrinsic(prefer_literal=True)
+def lock_int_op(typingctx, lock: types.CPointer, operation: types.StringLiteral):
+  """Performs an atomic lock at a pointer location"""
+  if not isinstance(operation, types.StringLiteral) or operation.literal_value not in {
+    "lock",
+    "unlock",
+  }:
+    raise RequireLiteralValue(
+      f"'operation' {operation} must be a StringLiteral "
+      f"set to either lock or unlock"
+    )
+
+  if not isinstance(lock, types.CPointer):
+    raise TypingError(f"lock {lock} must be an {ATOMIC_LOCK_TYPE}")
+
+  sig = types.bool(lock, operation)
+
+  def yield_wrapper_idx(i):
+    os_yield_fn()
+
+  def codegen(context, builder, signature, args):
+    lock, _ = args
+    lock_type, _ = signature.args
+    llvm_lock_type = context.get_value_type(lock_type.dtype)
+
+    index_type = types.int64
+    ll_index_type = context.get_value_type(index_type)
+
+    loop_cond = builder.append_basic_block(name="lock.while.cond")
+    loop_body = builder.append_basic_block(name="lock.while.body")
+    loop_end = builder.append_basic_block(name="lock.while.end")
+
+    # Save the starting block and branch to the conditional block
+    start_block = builder.block
+    builder.branch(loop_cond)
+
+    if operation.literal_value == "lock":
+      pre_xchg_value = ir.Constant(llvm_lock_type, 0)
+      post_xchg_value = ir.Constant(llvm_lock_type, 1)
+    elif operation.literal_value == "unlock":
+      pre_xchg_value = ir.Constant(llvm_lock_type, 1)
+      post_xchg_value = ir.Constant(llvm_lock_type, 0)
+    else:
+      raise ValueError(f"Invalid operation.literal_value " f"{operation.literal_value}")
+
+    with builder.goto_block(loop_cond):
+      count_phi = builder.phi(ll_index_type, name="lock.while.index")
+      xchng_result = builder.cmpxchg(
+        lock,
+        pre_xchg_value,
+        post_xchg_value,
+        ordering="acquire",
+        failordering="monotonic",
+      )
+      success = builder.extract_value(xchng_result, 1)
+      pred = builder.icmp_signed("==", success, success.type(1))
+      builder.cbranch(pred, loop_end, loop_body)
+
+    with builder.goto_block(loop_body):
+      next_count = builder.add(count_phi, count_phi.type(1))
+      context.compile_internal(
+        builder, yield_wrapper_idx, types.none(index_type), [next_count]
+      )
+      branch_block = builder.block
+      builder.branch(loop_cond)
+
+    # Add incoming values to the PHI node
+    count_phi.add_incoming(count_phi.type(0), start_block)  # From the entry block
+    count_phi.add_incoming(next_count, branch_block)  # From the loop body block
+
+    builder.position_at_end(loop_end)
+    return ir.Constant(ir.IntType(1), 1)
+
+  return sig, codegen
+
+
+@intrinsic(prefer_literal=True)
+def lock_array_op(
   typingctx, lock: types.Array, idx: types.UniTuple, operation: types.StringLiteral
 ):
   if not isinstance(operation, types.StringLiteral) or operation.literal_value not in {
@@ -113,17 +205,32 @@ if __name__ == "__main__":
   """Test script"""
 
   @numba.njit(nogil=True)
-  def lock_index(a, i):
-    return lock_op(a, i, "lock")
+  def lock_index():
+    ll = numba.typed.List()
+    ll.append(atomic_lock())
+    ll.append(atomic_lock())
+    ll.append(atomic_lock())
+    lock_int_op(ll[0], "lock")
+    lock_int_op(ll[0], "unlock")
 
-  @numba.njit(nogil=True)
-  def unlock_index(a, i):
-    return lock_op(a, i, "unlock")
+    return ll
 
-  locks = np.full(10, 0, np.int32)
+  print(len(lock_index()))
 
-  print(lock_index(locks, (0,)))
-  print(lock_index(locks, (1,)))
-  print(unlock_index(locks, (0,)))
-  print(lock_index(locks, (0,)))
-  print(unlock_index(locks, (1,)))
+  if False:
+
+    @numba.njit(nogil=True)
+    def lock_index(a, i):
+      return lock_array_op(a, i, "lock")
+
+    @numba.njit(nogil=True)
+    def unlock_index(a, i):
+      return lock_array_op(a, i, "unlock")
+
+    locks = np.full(10, 0, np.int32)
+
+    print(lock_index(locks, (0,)))
+    print(lock_index(locks, (1,)))
+    print(unlock_index(locks, (0,)))
+    print(lock_index(locks, (0,)))
+    print(unlock_index(locks, (1,)))
