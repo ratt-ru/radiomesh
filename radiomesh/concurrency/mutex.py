@@ -21,21 +21,22 @@ except OSError:
 os_yield_fn = libc.sched_yield
 os_yield_fn.argtypes = []
 
-ATOMIC_LOCK_TYPE = types.CPointer(types.uint8)
-
 
 @intrinsic(prefer_literal=True)
-def atomic_lock(typingctx):
+def atomic_lock(typingctx, lock_type):
   """Allocates an integer suitable for use as an atomic lock
   on the stack and returns a pointer to that integer"""
 
+  if not isinstance(lock_type, (types.NumberClass, types.DType)):
+    raise TypingError(f"{lock_type} is not a NumberClass or DType")
+
   def codegen(context, builder, signature, args):
-    llvm_lock_type = context.get_value_type(ATOMIC_LOCK_TYPE.dtype)
+    llvm_lock_type = context.get_value_type(lock_type.dtype)
     ptr = cgutils.alloca_once(builder, llvm_lock_type)
     builder.store(ir.Constant(llvm_lock_type, 0), ptr)
     return ptr
 
-  return ATOMIC_LOCK_TYPE(), codegen
+  return types.CPointer(lock_type.dtype)(lock_type), codegen
 
 
 @intrinsic(prefer_literal=True)
@@ -50,8 +51,8 @@ def lock_int_op(typingctx, lock: types.CPointer, operation: types.StringLiteral)
       f"set to either lock or unlock"
     )
 
-  if not isinstance(lock, types.CPointer):
-    raise TypingError(f"lock {lock} must be an {ATOMIC_LOCK_TYPE}")
+  if not (isinstance(lock, types.CPointer) and isinstance(lock.dtype, types.Integer)):
+    raise TypingError(f"lock {lock} must be an CPointer to an integer")
 
   sig = types.bool(lock, operation)
 
@@ -207,9 +208,9 @@ if __name__ == "__main__":
   @numba.njit(nogil=True)
   def lock_index():
     ll = numba.typed.List()
-    ll.append(atomic_lock())
-    ll.append(atomic_lock())
-    ll.append(atomic_lock())
+    ll.append(atomic_lock(np.dtype(np.uint8)))
+    ll.append(atomic_lock(np.dtype(np.uint8)))
+    ll.append(atomic_lock(np.dtype(np.uint8)))
     lock_int_op(ll[0], "lock")
     lock_int_op(ll[0], "unlock")
 
