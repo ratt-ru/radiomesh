@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Improve OS yield function calls (:pr:`56`)
 * Add integer atomic locks, as well as atomic RMW (read/modify/write) operations (:pr:`55`)
 * Change license to BSD3 (:pr:`52`)
 * Implement atomic spin-locks (:pr:`46`)
