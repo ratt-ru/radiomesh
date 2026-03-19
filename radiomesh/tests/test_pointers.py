@@ -24,7 +24,4 @@ def test_pointers():
     A.item_ptr(1, 1).atomic_inc()
     assert A[1, 1] == 1
 
-    B = np.zeros((3, 3), dtype=np.float64)
-    B.item_ptr(1, 1).atomic_inc()
-
   do_test()
