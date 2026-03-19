@@ -19,11 +19,11 @@ if os.name == "posix":
 elif os.name == "nt":
   YIELD_FUNCTION = "SwitchToThread"
 else:
-  raise NotImplementedError(f"yield function for {os.name}")
+  raise NotImplementedError(f"atomic locks on OS {os.name}")
 
 if not hasattr(ctypes.CDLL(None), YIELD_FUNCTION):
   raise ImportError(
-    f"{YIELD_FUNCTION} not found in the default C library. "
+    f"{YIELD_FUNCTION} not found in the default OS system libraries. "
     f"atomic locks are not supported on this platform"
   )
 
