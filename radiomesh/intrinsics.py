@@ -1,9 +1,10 @@
 from typing import Callable, Tuple
 
+from llvmlite import ir
 from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.core.typing.templates import Signature
-from numba.extending import intrinsic, register_jitable
+from numba.extending import intrinsic, overload_method, register_jitable
 
 
 @intrinsic(prefer_literal=True)
@@ -205,6 +206,110 @@ def accumulate_data(
     return None
 
   return sig, codegen
+
+
+@intrinsic(prefer_literal=True)
+def field_ptr(typingctx, record_ptr, field):
+  """Return a pointer to the field within the supplied record"""
+  if not isinstance(field, types.StringLiteral):
+    raise RequireLiteralValue(f"{field} must be a StringLiteral")
+
+  if not (
+    isinstance(record_ptr, types.CPointer)
+    and isinstance(record_dtype := record_ptr.dtype, types.Record)
+    and field.literal_value in record_dtype.fields
+  ):
+    raise TypingError(
+      f"record {record_ptr} must be a CPointer "
+      f"to a Record containing a {field.literal_value} member"
+    )
+
+  field_type, field_offset, _, _ = record_ptr.dtype.fields[field.literal_value]
+  field_ptr_type = types.CPointer(field_type)
+  sig = field_ptr_type(record_ptr, field)
+
+  def codegen(context, builder, signature, args):
+    record_ptr, _ = args
+    llvm_field_ptr_type = context.get_value_type(field_type).as_pointer()
+    field_ptr = builder.gep(
+      record_ptr,
+      [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_offset)],
+    )
+    return builder.bitcast(field_ptr, llvm_field_ptr_type)
+
+  return sig, codegen
+
+
+@overload_method(types.CPointer, "field_ptr", prefer_literal=True)
+def overload_field_ptr(ptr, field):
+  return lambda ptr, field: field_ptr(ptr, field)
+
+
+@intrinsic(prefer_literal=True)
+def item_ptr(typingctx, array, index):
+  """Return a pointer to the item in the array at the specified index"""
+  if not isinstance(array, types.Array):
+    raise TypingError(f"array {array} must be an Array")
+
+  if not (
+    isinstance(index, types.UniTuple)
+    and isinstance(index.dtype, types.Integer)
+    and array.ndim == len(index)
+  ):
+    raise TypingError(
+      f"index {index} must be a Tuple of Integers of length {array.ndim}"
+    )
+
+  def codegen(context, builder, signature, args):
+    array, index = args
+    array_type, index_type = signature.args
+    return cgutils.get_item_pointer(
+      context,
+      builder,
+      array_type,
+      context.make_array(array_type)(context, builder, array),
+      [builder.extract_value(index, i) for i in range(len(index_type))],
+    )
+
+  return types.CPointer(array.dtype)(array, index), codegen
+
+
+@overload_method(types.Array, "item_ptr", prefer_literal=True)
+def overload_item_ptr(array, *index):
+  return lambda array, *index: item_ptr(array, index)
+
+
+@intrinsic(prefer_literal=True)
+def atomic_rmw_intrinsic(typingctx, ptr, op, value, ordering):
+  if not isinstance(op, types.StringLiteral):
+    raise RequireLiteralValue(f"{op} is not a StringLiteral")
+
+  if not isinstance(ordering, types.StringLiteral):
+    raise RequireLiteralValue(f"{ordering} is not a StringLiteral")
+
+  OP = op.literal_value
+  ORDERING = ordering.literal_value
+
+  def codegen(context, builder, signature, args):
+    (ptr, _, value, _) = args
+    return builder.atomic_rmw(OP, ptr, value, ORDERING)
+
+  return ptr.dtype(ptr, op, value, ordering), codegen
+
+
+@overload_method(types.CPointer, "atomic_rmw")
+def overload_atomic_rmw(ptr, op, value, ordering=None):
+  """This dispatches to llvmlite's atomic_rmw instruction
+  https://llvmlite.readthedocs.io/en/latest/user-guide/ir/ir-builder.html#llvmlite.ir.atomic_rmw
+  """
+
+  def impl(ptr, op, value, ordering=None):
+    if ordering is None:
+      ordering = "acq_rel"
+
+    return atomic_rmw_intrinsic(ptr, op, value, ordering)
+
+  return impl
 
 
 @register_jitable
