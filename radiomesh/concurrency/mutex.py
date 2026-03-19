@@ -22,6 +22,60 @@ os_yield_fn = libc.sched_yield
 os_yield_fn.argtypes = []
 
 
+def _emit_lock_op(context, builder, operation, ptr, llvm_lock_type):
+  """Emit IR for a lock or unlock operation on an already-resolved pointer."""
+
+  def yield_wrapper_idx(i):
+    os_yield_fn()
+
+  index_type = types.int64
+  ll_index_type = context.get_value_type(index_type)
+
+  if operation.literal_value == "unlock":
+    builder.store_atomic(
+      ir.Constant(llvm_lock_type, 0),
+      ptr,
+      ordering="release",
+      align=llvm_lock_type.width,
+    )
+    return ir.Constant(ir.IntType(1), 1)
+
+  # Spin until the lock is acquired
+  loop_cond = builder.append_basic_block(name="lock.while.cond")
+  loop_body = builder.append_basic_block(name="lock.while.body")
+  loop_end = builder.append_basic_block(name="lock.while.end")
+
+  start_block = builder.block
+  builder.branch(loop_cond)
+
+  with builder.goto_block(loop_cond):
+    count_phi = builder.phi(ll_index_type, name="lock.while.index")
+    xchng_result = builder.cmpxchg(
+      ptr,
+      ir.Constant(llvm_lock_type, 0),
+      ir.Constant(llvm_lock_type, 1),
+      ordering="acquire",
+      failordering="acquire",
+    )
+    success = builder.extract_value(xchng_result, 1)
+    pred = builder.icmp_signed("==", success, success.type(1))
+    builder.cbranch(pred, loop_end, loop_body)
+
+  with builder.goto_block(loop_body):
+    next_count = builder.add(count_phi, count_phi.type(1))
+    context.compile_internal(
+      builder, yield_wrapper_idx, types.none(index_type), [next_count]
+    )
+    branch_block = builder.block
+    builder.branch(loop_cond)
+
+  count_phi.add_incoming(count_phi.type(0), start_block)
+  count_phi.add_incoming(next_count, branch_block)
+
+  builder.position_at_end(loop_end)
+  return ir.Constant(ir.IntType(1), 1)
+
+
 @intrinsic(prefer_literal=True)
 def atomic_lock(typingctx, lock_type):
   """Allocates an integer suitable for use as an atomic lock
@@ -56,61 +110,11 @@ def lock_int_op(typingctx, lock: types.CPointer, operation: types.StringLiteral)
 
   sig = types.bool(lock, operation)
 
-  def yield_wrapper_idx(i):
-    os_yield_fn()
-
   def codegen(context, builder, signature, args):
     lock, _ = args
     lock_type, _ = signature.args
     llvm_lock_type = context.get_value_type(lock_type.dtype)
-
-    index_type = types.int64
-    ll_index_type = context.get_value_type(index_type)
-
-    loop_cond = builder.append_basic_block(name="lock.while.cond")
-    loop_body = builder.append_basic_block(name="lock.while.body")
-    loop_end = builder.append_basic_block(name="lock.while.end")
-
-    # Save the starting block and branch to the conditional block
-    start_block = builder.block
-    builder.branch(loop_cond)
-
-    if operation.literal_value == "lock":
-      pre_xchg_value = ir.Constant(llvm_lock_type, 0)
-      post_xchg_value = ir.Constant(llvm_lock_type, 1)
-    elif operation.literal_value == "unlock":
-      pre_xchg_value = ir.Constant(llvm_lock_type, 1)
-      post_xchg_value = ir.Constant(llvm_lock_type, 0)
-    else:
-      raise ValueError(f"Invalid operation.literal_value " f"{operation.literal_value}")
-
-    with builder.goto_block(loop_cond):
-      count_phi = builder.phi(ll_index_type, name="lock.while.index")
-      xchng_result = builder.cmpxchg(
-        lock,
-        pre_xchg_value,
-        post_xchg_value,
-        ordering="acquire",
-        failordering="monotonic",
-      )
-      success = builder.extract_value(xchng_result, 1)
-      pred = builder.icmp_signed("==", success, success.type(1))
-      builder.cbranch(pred, loop_end, loop_body)
-
-    with builder.goto_block(loop_body):
-      next_count = builder.add(count_phi, count_phi.type(1))
-      context.compile_internal(
-        builder, yield_wrapper_idx, types.none(index_type), [next_count]
-      )
-      branch_block = builder.block
-      builder.branch(loop_cond)
-
-    # Add incoming values to the PHI node
-    count_phi.add_incoming(count_phi.type(0), start_block)  # From the entry block
-    count_phi.add_incoming(next_count, branch_block)  # From the loop body block
-
-    builder.position_at_end(loop_end)
-    return ir.Constant(ir.IntType(1), 1)
+    return _emit_lock_op(context, builder, operation, lock, llvm_lock_type)
 
   return sig, codegen
 
@@ -140,64 +144,14 @@ def lock_array_op(
 
   sig = types.bool(lock, idx, operation)
 
-  def yield_wrapper_idx(i):
-    os_yield_fn()
-
   def codegen(context, builder, signature, args):
     lock, idx, _ = args
     lock_type, idx_type, _ = signature.args
     llvm_lock_type = context.get_value_type(lock_type.dtype)
     lock_array = context.make_array(lock_type)(context, builder, lock)
-
-    index_type = types.int64
-    ll_index_type = context.get_value_type(index_type)
     native_idx = [builder.extract_value(idx, i) for i in range(len(idx_type))]
     out_ptr = builder.gep(lock_array.data, native_idx)
-
-    loop_cond = builder.append_basic_block(name="lock.while.cond")
-    loop_body = builder.append_basic_block(name="lock.while.body")
-    loop_end = builder.append_basic_block(name="lock.while.end")
-
-    # Save the starting block and branch to the conditional block
-    start_block = builder.block
-    builder.branch(loop_cond)
-
-    if operation.literal_value == "lock":
-      pre_xchg_value = ir.Constant(llvm_lock_type, 0)
-      post_xchg_value = ir.Constant(llvm_lock_type, 1)
-    elif operation.literal_value == "unlock":
-      pre_xchg_value = ir.Constant(llvm_lock_type, 1)
-      post_xchg_value = ir.Constant(llvm_lock_type, 0)
-    else:
-      raise ValueError(f"Invalid operation.literal_value " f"{operation.literal_value}")
-
-    with builder.goto_block(loop_cond):
-      count_phi = builder.phi(ll_index_type, name="lock.while.index")
-      xchng_result = builder.cmpxchg(
-        out_ptr,
-        pre_xchg_value,
-        post_xchg_value,
-        ordering="acquire",
-        failordering="monotonic",
-      )
-      success = builder.extract_value(xchng_result, 1)
-      pred = builder.icmp_signed("==", success, success.type(1))
-      builder.cbranch(pred, loop_end, loop_body)
-
-    with builder.goto_block(loop_body):
-      next_count = builder.add(count_phi, count_phi.type(1))
-      context.compile_internal(
-        builder, yield_wrapper_idx, types.none(index_type), [next_count]
-      )
-      branch_block = builder.block
-      builder.branch(loop_cond)
-
-    # Add incoming values to the PHI node
-    count_phi.add_incoming(count_phi.type(0), start_block)  # From the entry block
-    count_phi.add_incoming(next_count, branch_block)  # From the loop body block
-
-    builder.position_at_end(loop_end)
-    return ir.Constant(ir.IntType(1), 1)
+    return _emit_lock_op(context, builder, operation, out_ptr, llvm_lock_type)
 
   return sig, codegen
 
@@ -218,7 +172,7 @@ if __name__ == "__main__":
 
   print(len(lock_index()))
 
-  if False:
+  if True:
 
     @numba.njit(nogil=True)
     def lock_index(a, i):
