@@ -280,22 +280,36 @@ def overload_item_ptr(array, *index):
 
 
 @intrinsic(prefer_literal=True)
-def atomic_inc_ptr(typingctx, ptr):
-  if not (isinstance(ptr, types.CPointer) and isinstance(ptr.dtype, types.Integer)):
-    raise TypingError(f"ptr {ptr} must an CPointer to an Integer")
+def atomic_rmw_intrinsic(typingctx, ptr, op, value, ordering):
+  if not isinstance(op, types.StringLiteral):
+    raise RequireLiteralValue(f"{op} is not a StringLiteral")
+
+  if not isinstance(ordering, types.StringLiteral):
+    raise RequireLiteralValue(f"{ordering} is not a StringLiteral")
+
+  OP = op.literal_value
+  ORDERING = ordering.literal_value
 
   def codegen(context, builder, signature, args):
-    (ptr,) = args
-    (ptr_type,) = signature.args
-    llvm_ptr_type = context.get_value_type(ptr_type.dtype)
-    return builder.atomic_rmw("add", ptr, ir.Constant(llvm_ptr_type, 1), "monotonic")
+    (ptr, _, value, _) = args
+    return builder.atomic_rmw(OP, ptr, value, ORDERING)
 
-  return ptr.dtype(ptr), codegen
+  return ptr.dtype(ptr, op, value, ordering), codegen
 
 
-@overload_method(types.CPointer, "atomic_inc")
-def overload_atomic_inc_ptr(ptr):
-  return lambda ptr: atomic_inc_ptr(ptr)
+@overload_method(types.CPointer, "atomic_rmw")
+def overload_atomic_rmw(ptr, op, value, ordering=None):
+  """This dispatches to llvmlite's atomic_rmw instruction
+  https://llvmlite.readthedocs.io/en/latest/user-guide/ir/ir-builder.html#llvmlite.ir.atomic_rmw
+  """
+
+  def impl(ptr, op, value, ordering=None):
+    if ordering is None:
+      ordering = "acq_rel"
+
+    return atomic_rmw_intrinsic(ptr, op, value, ordering)
+
+  return impl
 
 
 @register_jitable
