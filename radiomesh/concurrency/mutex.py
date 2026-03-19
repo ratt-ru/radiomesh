@@ -5,6 +5,7 @@ https://numba.discourse.group/t/phi-node-error-when-creating-a-while-loop-for-an
 """
 
 import ctypes
+import os
 
 import numba
 import numpy as np
@@ -13,25 +14,26 @@ from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import intrinsic
 
-try:
-  libc = ctypes.CDLL("libc.so.6")
-except OSError:
-  libc = ctypes.CDLL("libc.so")
+if os.name == "posix":
+  YIELD_FUNCTION = "sched_yield"
+elif os.name == "nt":
+  YIELD_FUNCTION = "SwitchToThread"
+else:
+  raise NotImplementedError(f"atomic locks on OS {os.name}")
 
-os_yield_fn = libc.sched_yield
-os_yield_fn.argtypes = []
+if not hasattr(ctypes.CDLL(None), YIELD_FUNCTION):
+  raise ImportError(
+    f"{YIELD_FUNCTION} not found in the default OS system libraries. "
+    f"atomic locks are not supported on this platform"
+  )
 
 
 def _emit_lock_op(context, builder, operation, ptr, lock_type):
   """Emit IR for a lock or unlock operation on an already-resolved pointer."""
 
-  def yield_wrapper_idx(i):
-    os_yield_fn()
-
   llvm_lock_type = context.get_value_type(lock_type.dtype)
 
-  index_type = types.int64
-  ll_index_type = context.get_value_type(index_type)
+  ll_index_type = context.get_value_type(types.int64)
 
   if operation.literal_value == "unlock":
     builder.store_atomic(
@@ -46,6 +48,13 @@ def _emit_lock_op(context, builder, operation, ptr, lock_type):
   loop_cond = builder.append_basic_block(name="lock.while.cond")
   loop_body = builder.append_basic_block(name="lock.while.body")
   loop_end = builder.append_basic_block(name="lock.while.end")
+
+  # Get the OS yield function
+  try:
+    sched_yield = builder.module.globals[YIELD_FUNCTION]
+  except KeyError:
+    sched_yield_fnty = ir.FunctionType(ir.IntType(32), [])
+    sched_yield = ir.Function(builder.module, sched_yield_fnty, name=YIELD_FUNCTION)
 
   start_block = builder.block
   builder.branch(loop_cond)
@@ -65,9 +74,7 @@ def _emit_lock_op(context, builder, operation, ptr, lock_type):
 
   with builder.goto_block(loop_body):
     next_count = builder.add(count_phi, count_phi.type(1))
-    context.compile_internal(
-      builder, yield_wrapper_idx, types.none(index_type), [next_count]
-    )
+    builder.call(sched_yield, [])
     branch_block = builder.block
     builder.branch(loop_cond)
 
