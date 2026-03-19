@@ -22,11 +22,13 @@ os_yield_fn = libc.sched_yield
 os_yield_fn.argtypes = []
 
 
-def _emit_lock_op(context, builder, operation, ptr, llvm_lock_type):
+def _emit_lock_op(context, builder, operation, ptr, lock_type):
   """Emit IR for a lock or unlock operation on an already-resolved pointer."""
 
   def yield_wrapper_idx(i):
     os_yield_fn()
+
+  llvm_lock_type = context.get_value_type(lock_type.dtype)
 
   index_type = types.int64
   ll_index_type = context.get_value_type(index_type)
@@ -36,7 +38,7 @@ def _emit_lock_op(context, builder, operation, ptr, llvm_lock_type):
       ir.Constant(llvm_lock_type, 0),
       ptr,
       ordering="release",
-      align=llvm_lock_type.width,
+      align=context.get_abi_alignment(llvm_lock_type),
     )
     return ir.Constant(ir.IntType(1), 1)
 
@@ -113,8 +115,7 @@ def lock_int_op(typingctx, lock: types.CPointer, operation: types.StringLiteral)
   def codegen(context, builder, signature, args):
     lock, _ = args
     lock_type, _ = signature.args
-    llvm_lock_type = context.get_value_type(lock_type.dtype)
-    return _emit_lock_op(context, builder, operation, lock, llvm_lock_type)
+    return _emit_lock_op(context, builder, operation, lock, lock_type)
 
   return sig, codegen
 
@@ -147,11 +148,10 @@ def lock_array_op(
   def codegen(context, builder, signature, args):
     lock, idx, _ = args
     lock_type, idx_type, _ = signature.args
-    llvm_lock_type = context.get_value_type(lock_type.dtype)
     lock_array = context.make_array(lock_type)(context, builder, lock)
     native_idx = [builder.extract_value(idx, i) for i in range(len(idx_type))]
     out_ptr = builder.gep(lock_array.data, native_idx)
-    return _emit_lock_op(context, builder, operation, out_ptr, llvm_lock_type)
+    return _emit_lock_op(context, builder, operation, out_ptr, lock_type)
 
   return sig, codegen
 
