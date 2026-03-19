@@ -97,7 +97,7 @@ def atomic_lock(typingctx, lock_type):
 
 @intrinsic(prefer_literal=True)
 def lock_int_op(typingctx, lock: types.CPointer, operation: types.StringLiteral):
-  """Performs an atomic lock at a pointer location"""
+  """Performs an atomic lock/lock on integer located by a pointer"""
   if not isinstance(operation, types.StringLiteral) or operation.literal_value not in {
     "lock",
     "unlock",
@@ -124,6 +124,7 @@ def lock_int_op(typingctx, lock: types.CPointer, operation: types.StringLiteral)
 def lock_array_op(
   typingctx, lock: types.Array, idx: types.UniTuple, operation: types.StringLiteral
 ):
+  """Performs an atomic lock/unlock operation at the given index in an integer array"""
   if not isinstance(operation, types.StringLiteral) or operation.literal_value not in {
     "lock",
     "unlock",
