@@ -1,12 +1,25 @@
 import numba
 import numpy as np
+from numba.np.numpy_support import as_struct_dtype
 
 from radiomesh.gridding_types import (
   TILE_BITS,
+  CachedAlignedCounter,
   StructUvwTile,
   UvwTile,
 )
 from radiomesh.gridding_types import TILE_MASK as MAX_TILE
+
+def test_cache_aligned_counter():
+  @numba.njit(nogil=True)
+  def update(a):
+    a.item_ptr(0).field_ptr("count").atomic_rmw("add", 1)
+    a.item_ptr(1).field_ptr("count").atomic_rmw("sub", 1)
+
+  A = np.zeros(100, dtype=as_struct_dtype(CachedAlignedCounter))
+  update(A)
+  assert A[0]["count"] == 1
+  assert A[1]["count"] == -1
 
 
 def test_record_uvw_tile():

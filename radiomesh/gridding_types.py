@@ -19,6 +19,11 @@ V_TILE_MASK = TILE_MASK << V_TILE_BIT_OFFSET
 W_TILE_MASK = TILE_MASK << W_TILE_BIT_OFFSET
 
 
+# A 64 bit cache aligned integer counter
+CachedAlignedCounter = types.Record(
+  [("count", {"type": types.int64, "offset": 0})], size=CACHE_LINE_SIZE, aligned=True
+)
+
 # Align with cache line to avoid false sharing during atomic operations
 UvwTile = types.Record(
   [("index", {"type": types.uint64, "offset": 0})], size=CACHE_LINE_SIZE, aligned=True
