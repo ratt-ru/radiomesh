@@ -10,6 +10,20 @@ from radiomesh.gridding_types import (
 )
 from radiomesh.gridding_types import TILE_MASK as MAX_TILE
 
+
+def test_record_assignment():
+  @numba.njit(nogil=True, cache=True)
+  def update(a):
+    a[0].a = 1
+    a[0].b = 2.0
+
+  dtype = np.dtype([("a", np.int32), ("b", np.float64)])
+  array = np.zeros(10, dtype=dtype)
+  update(array)
+  assert array[0]["a"] == 1
+  assert array[0]["b"] == 2.0
+
+
 def test_cache_aligned_counter():
   @numba.njit(nogil=True)
   def update(a):
