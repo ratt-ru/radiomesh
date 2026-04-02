@@ -125,7 +125,9 @@ def eval_es_kernel(
       # Zero after possible vectorisation (SIMD) of the above expression
       return value if -1.0 <= x <= 1.0 else 0.0
   else:
+    ### TODO: Handle polynomial kernel variants here
 
+    # This is the full analytic version of the kernel
     def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
       x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
       value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
