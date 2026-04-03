@@ -16,7 +16,8 @@ from radiomesh.utils import image_params, wgridder_conventions
 @pytest.mark.parametrize("epsilon", [2e-13])
 @pytest.mark.parametrize("apply_w", [True, False])
 @pytest.mark.parametrize("apply_jones", [True, False])
-def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
+@pytest.mark.parametrize("analytic", [False, True])
+def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analytic):
   """Smoke test. Call with NUMBA_DEBUG_CACHE=1 to ensure caching works"""
   rng = np.random.default_rng(42)
 
@@ -39,7 +40,9 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
   weights = rng.random(shape)
   flags = np.zeros_like(weights, np.uint8)
 
-  kernel = ESKernel(epsilon, apply_w=apply_w, oversampling=oversampling)
+  kernel = ESKernel(
+    epsilon, apply_w=apply_w, oversampling=oversampling, analytic=analytic
+  )
 
   # Now recompute these params
   nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freqs, fov, kernel)
@@ -135,7 +138,11 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones):
       vsign=vsign,
     )
 
+  # wgrid_data and grid_data always use the analytic kernel; when analytic=False
+  # the polynomial approximation introduces small errors, so we relax tolerances.
+  tol_kw = {} if analytic else {"rtol": 1e-6, "atol": 1e-15}
+
   # wgrid_data and grid_data only apply the first jones matrix
   # which we've stacked ndir times in the call to wgrid
   for d in range(ndir):
-    np.testing.assert_allclose(vis_grid[:, d, ...], result)
+    np.testing.assert_allclose(vis_grid[:, d, ...], result, **tol_kw)

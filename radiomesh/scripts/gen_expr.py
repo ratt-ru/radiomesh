@@ -1,13 +1,13 @@
 import importlib.resources
 import re
 from argparse import Namespace
-from contextlib import ExitStack
+from pathlib import Path
 from typing import Dict, List, Literal, Tuple
 
 import sympy
 from sympy.physics.quantum import TensorProduct
 
-import radiomesh
+import radiomesh.generated
 
 OUTPUT_FILENAME = "_stokes_expr.py"
 
@@ -124,56 +124,53 @@ def subs_sympy(expr: sympy.Expr) -> str:
 
 
 def generate_expression(args: Namespace):
-  with ExitStack() as stack:
-    expr_path = stack.enter_context(
-      importlib.resources.path(radiomesh, OUTPUT_FILENAME)
+  path = Path(str(importlib.resources.files(radiomesh.generated) / OUTPUT_FILENAME))
+  lines = [PREAMBLE]
+  conv_fns: Dict[Tuple[str, str, str, str], str] = {}
+
+  for pol_type in POLARISATION_TYPES:
+    stokes_schema, coh_jones, wgt_jones, coh_nojones, wgt_nojones = sympy_expressions(
+      pol_type
     )
-    f = stack.enter_context(open(expr_path, "w"))
+    assert coh_jones.shape == coh_nojones.shape == (len(stokes_schema), 1)
+    assert wgt_jones.shape == wgt_nojones.shape == (len(stokes_schema), 1)
 
-    f.write(PREAMBLE)
-    conv_fns: Dict[Tuple[str, str, str, str], str] = {}
+    for stokes, coh_jones in zip(stokes_schema, coh_jones):
+      fn_name = f"{pol_type.upper()}_VIS_JONES_{stokes.upper()}"
+      key = ("VIS", pol_type.upper(), "JONES", stokes.upper())
+      conv_fns[key] = fn_name
+      lines.append(f"def {fn_name}({', '.join(VIS_FN_ARGUMENTS)}):\n")
+      lines.append(f"  return {subs_sympy(coh_jones)}\n")
+      lines.append("\n")
 
-    for pol_type in POLARISATION_TYPES:
-      stokes_schema, coh_jones, wgt_jones, coh_nojones, wgt_nojones = sympy_expressions(
-        pol_type
-      )
-      assert coh_jones.shape == coh_nojones.shape == (len(stokes_schema), 1)
-      assert wgt_jones.shape == wgt_nojones.shape == (len(stokes_schema), 1)
+    for stokes, wgt_jones in zip(stokes_schema, wgt_jones):
+      fn_name = f"{pol_type.upper()}_WEIGHT_JONES_{stokes.upper()}"
+      key = ("WEIGHT", pol_type.upper(), "JONES", stokes.upper())
+      conv_fns[key] = fn_name
+      lines.append(f"def {fn_name}({', '.join(WEIGHT_FN_ARGUMENTS)}):\n")
+      lines.append(f"  return ({subs_sympy(wgt_jones)}).real\n")
+      lines.append("\n")
 
-      for stokes, coh_jones in zip(stokes_schema, coh_jones):
-        fn_name = f"{pol_type.upper()}_VIS_JONES_{stokes.upper()}"
-        key = ("VIS", pol_type.upper(), "JONES", stokes.upper())
-        conv_fns[key] = fn_name
-        f.write(f"def {fn_name}({', '.join(VIS_FN_ARGUMENTS)}):\n")
-        f.write(f"  return {subs_sympy(coh_jones)}\n")
-        f.write("\n")
+    for stokes, coh_nojones in zip(stokes_schema, coh_nojones):
+      fn_name = f"{pol_type.upper()}_VIS_NOJONES_{stokes.upper()}"
+      key = ("VIS", pol_type.upper(), "NOJONES", stokes.upper())
+      conv_fns[key] = fn_name
+      lines.append(f"def {fn_name}({', '.join(VIS_ARGUMENTS)}):\n")
+      lines.append(f"  return {subs_sympy(coh_nojones)}\n")
+      lines.append("\n")
 
-      for stokes, wgt_jones in zip(stokes_schema, wgt_jones):
-        fn_name = f"{pol_type.upper()}_WEIGHT_JONES_{stokes.upper()}"
-        key = ("WEIGHT", pol_type.upper(), "JONES", stokes.upper())
-        conv_fns[key] = fn_name
-        f.write(f"def {fn_name}({', '.join(WEIGHT_FN_ARGUMENTS)}):\n")
-        f.write(f"  return ({subs_sympy(wgt_jones)}).real\n")
-        f.write("\n")
+    for stokes, wgt_nojones in zip(stokes_schema, wgt_nojones):
+      fn_name = f"{pol_type.upper()}_WEIGHT_NOJONES_{stokes.upper()}"
+      key = ("WEIGHT", pol_type.upper(), "NOJONES", stokes.upper())
+      conv_fns[key] = fn_name
+      lines.append(f"def {fn_name}({', '.join(WEIGHT_ARGUMENTS)}):\n")
+      lines.append(f"  return ({subs_sympy(wgt_nojones)}).real\n")
+      lines.append("\n")
 
-      for stokes, coh_nojones in zip(stokes_schema, coh_nojones):
-        fn_name = f"{pol_type.upper()}_VIS_NOJONES_{stokes.upper()}"
-        key = ("VIS", pol_type.upper(), "NOJONES", stokes.upper())
-        conv_fns[key] = fn_name
-        f.write(f"def {fn_name}({', '.join(VIS_ARGUMENTS)}):\n")
-        f.write(f"  return {subs_sympy(coh_nojones)}\n")
-        f.write("\n")
+  lines.append("CONVERT_FNS = {\n")
+  for key, fn_name in conv_fns.items():
+    lines.append(f"  {key}: {fn_name},\n")
+  lines.append("}\n")
+  lines.append("\n")
 
-      for stokes, wgt_nojones in zip(stokes_schema, wgt_nojones):
-        fn_name = f"{pol_type.upper()}_WEIGHT_NOJONES_{stokes.upper()}"
-        key = ("WEIGHT", pol_type.upper(), "NOJONES", stokes.upper())
-        conv_fns[key] = fn_name
-        f.write(f"def {fn_name}({', '.join(WEIGHT_ARGUMENTS)}):\n")
-        f.write(f"  return ({subs_sympy(wgt_nojones)}).real\n")
-        f.write("\n")
-
-    f.write("CONVERT_FNS = {\n")
-    for key, fn_name in conv_fns.items():
-      f.write(f"  {key}: {fn_name},\n")
-    f.write("}\n")
-    f.write("\n")
+  path.write_text("\n".join(lines))

@@ -5,9 +5,7 @@
 from numpy import conjugate as conj
 
 
-def LINEAR_VIS_JONES_I(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_VIS_JONES_I(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * (
@@ -29,9 +27,7 @@ def LINEAR_VIS_JONES_I(
   )
 
 
-def LINEAR_VIS_JONES_Q(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_VIS_JONES_Q(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * (
@@ -53,9 +49,7 @@ def LINEAR_VIS_JONES_Q(
   )
 
 
-def LINEAR_VIS_JONES_U(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_VIS_JONES_U(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * (
@@ -77,9 +71,7 @@ def LINEAR_VIS_JONES_U(
   )
 
 
-def LINEAR_VIS_JONES_V(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_VIS_JONES_V(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * 1j
@@ -102,9 +94,7 @@ def LINEAR_VIS_JONES_V(
   )
 
 
-def LINEAR_WEIGHT_JONES_I(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_WEIGHT_JONES_I(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     jp00 * w00 * (jq00 * conj(jp00) + jq01 * conj(jp01)) * conj(jq00)
     + jp00 * w01 * (jq10 * conj(jp00) + jq11 * conj(jp01)) * conj(jq10)
@@ -117,9 +107,7 @@ def LINEAR_WEIGHT_JONES_I(
   ).real
 
 
-def LINEAR_WEIGHT_JONES_Q(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_WEIGHT_JONES_Q(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     jp00 * w00 * (jq00 * conj(jp00) - jq01 * conj(jp01)) * conj(jq00)
     + jp00 * w01 * (jq10 * conj(jp00) - jq11 * conj(jp01)) * conj(jq10)
@@ -132,9 +120,7 @@ def LINEAR_WEIGHT_JONES_Q(
   ).real
 
 
-def LINEAR_WEIGHT_JONES_U(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_WEIGHT_JONES_U(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     jp00 * w00 * (jq00 * conj(jp01) + jq01 * conj(jp00)) * conj(jq01)
     + jp00 * w01 * (jq10 * conj(jp01) + jq11 * conj(jp00)) * conj(jq11)
@@ -147,9 +133,7 @@ def LINEAR_WEIGHT_JONES_U(
   ).real
 
 
-def LINEAR_WEIGHT_JONES_V(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def LINEAR_WEIGHT_JONES_V(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     -jp00 * w00 * (jq00 * conj(jp01) - jq01 * conj(jp00)) * conj(jq01)
     - jp00 * w01 * (jq10 * conj(jp01) - jq11 * conj(jp00)) * conj(jq11)
@@ -194,9 +178,7 @@ def LINEAR_WEIGHT_NOJONES_V(w00, w01, w10, w11):
   return (w01 + w10).real
 
 
-def CIRCULAR_VIS_JONES_I(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_VIS_JONES_I(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * (
@@ -218,9 +200,7 @@ def CIRCULAR_VIS_JONES_I(
   )
 
 
-def CIRCULAR_VIS_JONES_Q(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_VIS_JONES_Q(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * (
@@ -242,9 +222,7 @@ def CIRCULAR_VIS_JONES_Q(
   )
 
 
-def CIRCULAR_VIS_JONES_U(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_VIS_JONES_U(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * 1j
@@ -267,9 +245,7 @@ def CIRCULAR_VIS_JONES_U(
   )
 
 
-def CIRCULAR_VIS_JONES_V(
-  v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_VIS_JONES_V(v00, v01, v10, v11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     0.5
     * (
@@ -291,9 +267,7 @@ def CIRCULAR_VIS_JONES_V(
   )
 
 
-def CIRCULAR_WEIGHT_JONES_I(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_WEIGHT_JONES_I(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     jp00 * w00 * (jq00 * conj(jp00) + jq01 * conj(jp01)) * conj(jq00)
     + jp00 * w01 * (jq10 * conj(jp00) + jq11 * conj(jp01)) * conj(jq10)
@@ -306,9 +280,7 @@ def CIRCULAR_WEIGHT_JONES_I(
   ).real
 
 
-def CIRCULAR_WEIGHT_JONES_Q(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_WEIGHT_JONES_Q(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     jp00 * w00 * (jq00 * conj(jp01) + jq01 * conj(jp00)) * conj(jq01)
     + jp00 * w01 * (jq10 * conj(jp01) + jq11 * conj(jp00)) * conj(jq11)
@@ -321,9 +293,7 @@ def CIRCULAR_WEIGHT_JONES_Q(
   ).real
 
 
-def CIRCULAR_WEIGHT_JONES_U(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_WEIGHT_JONES_U(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     -jp00 * w00 * (jq00 * conj(jp01) - jq01 * conj(jp00)) * conj(jq01)
     - jp00 * w01 * (jq10 * conj(jp01) - jq11 * conj(jp00)) * conj(jq11)
@@ -336,9 +306,7 @@ def CIRCULAR_WEIGHT_JONES_U(
   ).real
 
 
-def CIRCULAR_WEIGHT_JONES_V(
-  w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11
-):
+def CIRCULAR_WEIGHT_JONES_V(w00, w01, w10, w11, jp00, jp01, jp10, jp11, jq00, jq01, jq10, jq11):
   return (
     jp00 * w00 * (jq00 * conj(jp00) - jq01 * conj(jp01)) * conj(jq00)
     + jp00 * w01 * (jq10 * conj(jp00) - jq11 * conj(jp01)) * conj(jq10)
