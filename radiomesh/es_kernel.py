@@ -400,18 +400,21 @@ class ESKernel:
     oversampling: float = 2.0,
     apply_w: bool = False,
     single: bool = False,
+    analytic: bool = False,
   ) -> ESKernel:
     """Construct an :class:`ESKernel` by selecting parameters from the KernelDB.
 
     Mirrors ``selectKernel`` from ducc0: finds the KernelDB entry with the
     smallest support satisfying all constraints, then returns a kernel
-    configured with those parameters and ``analytic=False``.
+    configured with those parameters.
 
     Args:
       epsilon: required accuracy.
       oversampling: oversampling factor.
       apply_w: True for w-gridding (3-D), False for 2-D gridding.
       single: True for single (float32) precision, False for double.
+      analytic: If False (default), use polynomial evaluation. If True,
+        use analytic evaluation with the KernelDB beta/mu parameters.
 
     Raises:
       KernelSelectionError: if no matching entry exists in KERNEL_DB.
@@ -423,7 +426,7 @@ class ESKernel:
       oversampling=entry.oversampling,
       beta=entry.beta,
       mu=entry.mu,
-      analytic=False,
+      analytic=analytic,
       single=single,
       support=entry.support,
     )

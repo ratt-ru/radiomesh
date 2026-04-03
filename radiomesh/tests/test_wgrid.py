@@ -40,10 +40,9 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
   weights = rng.random(shape)
   flags = np.zeros_like(weights, np.uint8)
 
-  if analytic:
-    kernel = ESKernel(epsilon, apply_w=apply_w, oversampling=oversampling)
-  else:
-    kernel = ESKernel.from_kernel_db(epsilon, oversampling=oversampling, apply_w=apply_w)
+  kernel = ESKernel.from_kernel_db(
+    epsilon, oversampling=oversampling, apply_w=apply_w, analytic=analytic
+  )
 
   # Now recompute these params
   nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freqs, fov, kernel)
