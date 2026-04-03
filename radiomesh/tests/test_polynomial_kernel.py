@@ -34,12 +34,12 @@ _SAMPLE_ENTRIES = [
 def _make_eval_fn(kernel: ESKernel):
   """Return a JIT-compiled function that evaluates the kernel for a given u."""
   HALF_SUPPORT_INT = kernel.half_support_int
-  KERN = Datum(kernel)
+  KERNEL = Datum(kernel)
 
   @numba.njit
   def fn(u: float):
     ps = int(np.round(u)) - HALF_SUPPORT_INT
-    return eval_es_kernel(KERN, u, ps)
+    return eval_es_kernel(KERNEL, u, ps)
 
   return fn
 
@@ -101,22 +101,22 @@ def _analytic_eval(betak: float, mu: float, x: float) -> float:
 )
 def test_polynomial_matches_analytic(entry):
   """Polynomial approximation agrees with the analytic kernel to within 1e-12."""
-  W = entry.support
-  betak = entry.beta * W
+  SUPPORT = entry.support
+  betak = entry.beta * SUPPORT
   mu = entry.mu
 
-  coeffs = generate_poly_coeffs(W, betak, mu)
+  coeffs = generate_poly_coeffs(SUPPORT, betak, mu)
 
   xs = np.linspace(-0.99, 0.99, 200)
   max_err = max(
-    abs(_poly_eval(coeffs, W, float(x)) - _analytic_eval(betak, mu, float(x)))
+    abs(_poly_eval(coeffs, SUPPORT, float(x)) - _analytic_eval(betak, mu, float(x)))
     for x in xs
   )
   # The polynomial of degree D=W+3 achieves accuracy well within the
   # kernel's own epsilon — not machine precision.
   assert (
     max_err < entry.epsilon
-  ), f"W={W}: max |poly - analytic| = {max_err:.2e} > epsilon {entry.epsilon:.2e}"
+  ), f"W={SUPPORT}: max |poly - analytic| = {max_err:.2e} > epsilon {entry.epsilon:.2e}"
 
 
 # ---------------------------------------------------------------------------
