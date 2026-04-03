@@ -296,22 +296,23 @@ def eval_es_kernel(
   MU = kernel.mu
   ANALYTIC = kernel.analytic
 
-  if MU == 0.5:
-    # mu == 0.5 always uses the fast sqrt variant regardless of `analytic`
-    def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
-      x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
-      value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
-      # Above is only defined for [-1.0, 1.0]
-      # Zero after possible vectorisation (SIMD) of the above expression
-      return value if -1.0 <= x <= 1.0 else 0.0
-  elif ANALYTIC:
-    # Full analytic version: exp(betak * ((1 - x^2)^mu - 1))
-    def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
-      x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
-      value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
-      # Above is only defined for [-1.0, 1.0]
-      # Zero after possible vectorisation (SIMD) of the above expression
-      return value if -1.0 <= x <= 1.0 else 0.0
+  if ANALYTIC:
+    if MU == 0.5:
+      # mu == 0.5: fast sqrt variant
+      def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
+        x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
+        value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
+        # Above is only defined for [-1.0, 1.0]
+        # Zero after possible vectorisation (SIMD) of the above expression
+        return value if -1.0 <= x <= 1.0 else 0.0
+    else:
+      # Full analytic version: exp(betak * ((1 - x^2)^mu - 1))
+      def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
+        x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
+        value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
+        # Above is only defined for [-1.0, 1.0]
+        # Zero after possible vectorisation (SIMD) of the above expression
+        return value if -1.0 <= x <= 1.0 else 0.0
   else:
     # Polynomial approximation: W piecewise degree-(W+3) polynomials on [-1, 1].
     # Coefficients are computed at JIT-compile time via Chebyshev fitting
@@ -375,10 +376,9 @@ class ESKernel:
   # ES kernel parameters
   beta: float = 2.3
   # Exponent in (1 - x^2)^mu. Equivalent to e0 in ducc0's KernelParams.
-  # mu == 0.5 always uses the fast sqrt variant regardless of `analytic`.
   mu: float = 0.5
-  # If True (default), evaluate analytically via exp(pow(...)). If False,
-  # use the polynomial approximation. mu == 0.5 always uses sqrt regardless.
+  # If True (default), evaluate analytically. mu == 0.5 uses the fast sqrt
+  # variant; otherwise uses exp(pow(...)). If False, use polynomial approximation.
   analytic: bool = True
   # Single (float32) precision. Selects the appropriate KernelDB partition
   # when analytic=False.
