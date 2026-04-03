@@ -371,7 +371,7 @@ class ESKernel:
   epsilon: float = 2e-13
   # Oversampling factor.
   # Corresponds to :code:`ofactor` within the ducc0 wgridder code base
-  oversampling: int = 2
+  oversampling: float = 2.0
   # ES kernel parameters
   beta: float = 2.3
   # Exponent in (1 - x^2)^mu. Equivalent to e0 in ducc0's KernelParams.
@@ -397,7 +397,7 @@ class ESKernel:
   @staticmethod
   def from_kernel_db(
     epsilon: float,
-    oversampling: float = 2,
+    oversampling: float = 2.0,
     apply_w: bool = False,
     single: bool = False,
   ) -> ESKernel:
