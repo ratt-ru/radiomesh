@@ -67,7 +67,7 @@ class WGridderParameters:
 
   def __post_init__(self):
     if isinstance(self.kernel, float):
-      self.kernel = ESKernel(epsilon=self.kernel, apply_w=self.apply_w)
+      self.kernel = ESKernel.from_kernel_db(self.kernel, apply_w=self.apply_w)
 
 
 def wgrid_impl(

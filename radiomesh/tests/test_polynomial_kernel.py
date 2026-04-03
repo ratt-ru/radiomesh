@@ -128,11 +128,10 @@ def test_polynomial_matches_analytic(entry):
   "entry", _SAMPLE_ENTRIES, ids=lambda e: f"W{e.support}_ndim{e.ndim}"
 )
 def test_polynomial_kernel_uses_kernel_db(entry):
-  """analytic=False overrides beta, mu, support with the KernelDB entry."""
-  k = ESKernel(
+  """from_kernel_db selects beta, mu, support from the KernelDB entry."""
+  k = ESKernel.from_kernel_db(
     epsilon=entry.epsilon,
     oversampling=entry.oversampling,
-    analytic=False,
     apply_w=(entry.ndim == 3),
   )
   assert k.support == entry.support
@@ -154,7 +153,7 @@ def test_polynomial_zero_at_boundary(entry):
   For even support W, centering the kernel at u = half_support_int places
   the first tap exactly at kernel argument x = -1.0, which must return 0.
   """
-  k = ESKernel(epsilon=entry.epsilon, oversampling=entry.oversampling, analytic=False)
+  k = ESKernel.from_kernel_db(epsilon=entry.epsilon, oversampling=entry.oversampling)
   fn = _make_eval_fn(k)
 
   if k.support % 2 == 0:

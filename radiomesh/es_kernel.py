@@ -377,34 +377,56 @@ class ESKernel:
   # Exponent in (1 - x^2)^mu. Equivalent to e0 in ducc0's KernelParams.
   # mu == 0.5 always uses the fast sqrt variant regardless of `analytic`.
   mu: float = 0.5
-  # If True, evaluate analytically via exp(pow(...)). If False (default),
+  # If True (default), evaluate analytically via exp(pow(...)). If False,
   # use the polynomial approximation. mu == 0.5 always uses sqrt regardless.
-  analytic: bool = False
+  analytic: bool = True
   # Single (float32) precision. Selects the appropriate KernelDB partition
   # when analytic=False.
   single: bool = False
   # Is w gridding enabled
   apply_w: dataclasses.InitVar[bool] = False
-  # Kernel support
-  support: int = dataclasses.field(init=False)
+  # Kernel support. If None, computed from epsilon and apply_w via heuristic.
+  support: int | None = None
 
   def __post_init__(self, apply_w):
-    """Determine kernel parameters.
-
-    When ``analytic=False``, ``beta``, ``mu``, and ``support`` are overridden
-    by the KernelDB entry that best matches ``(epsilon, oversampling, ndim,
-    single)``.  When ``analytic=True`` the heuristic support formula is used
-    and ``beta``/``mu`` remain as set.
-    """
-    ndim = 3 if apply_w else 2
-    if not self.analytic:
-      entry = select_kernel_params(self.epsilon, self.oversampling, ndim, self.single)
-      self.support = entry.support
-      self.beta = entry.beta
-      self.mu = entry.mu
-    else:
+    """Compute heuristic support from epsilon and apply_w if not provided."""
+    if self.support is None:
       factor = 3.0 if apply_w else 2.0
       self.support = int(math.ceil(math.log10(factor * 1.0 / self.epsilon))) + 1
+
+  @staticmethod
+  def from_kernel_db(
+    epsilon: float,
+    oversampling: float = 2,
+    apply_w: bool = False,
+    single: bool = False,
+  ) -> ESKernel:
+    """Construct an :class:`ESKernel` by selecting parameters from the KernelDB.
+
+    Mirrors ``selectKernel`` from ducc0: finds the KernelDB entry with the
+    smallest support satisfying all constraints, then returns a kernel
+    configured with those parameters and ``analytic=False``.
+
+    Args:
+      epsilon: required accuracy.
+      oversampling: oversampling factor.
+      apply_w: True for w-gridding (3-D), False for 2-D gridding.
+      single: True for single (float32) precision, False for double.
+
+    Raises:
+      KernelSelectionError: if no matching entry exists in KERNEL_DB.
+    """
+    ndim = 3 if apply_w else 2
+    entry = select_kernel_params(epsilon, oversampling, ndim, single)
+    return ESKernel(
+      epsilon=epsilon,
+      oversampling=entry.oversampling,
+      beta=entry.beta,
+      mu=entry.mu,
+      analytic=False,
+      single=single,
+      support=entry.support,
+    )
 
   @property
   def half_support(self) -> float:
