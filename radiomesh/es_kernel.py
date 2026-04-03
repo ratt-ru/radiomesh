@@ -317,7 +317,7 @@ def eval_es_kernel(
     # Coefficients are computed at JIT-compile time via Chebyshev fitting
     # (replicates ducc0's getCoeffs / PolynomialKernel::eval).
     POLY_COEFFS = generate_poly_coeffs(SUPPORT, BETAK, MU)
-    D = SUPPORT + 3
+    NCOEFFS = len(POLY_COEFFS)
 
     def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
       x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
@@ -328,9 +328,9 @@ def eval_es_kernel(
       if nth >= SUPPORT:
         nth = SUPPORT - 1
       locx = ((xrel - nth) - 0.5) * 2.0
-      # Horner evaluation over D+1 coefficients for sub-interval nth
+      # Horner evaluation over coefficients for sub-interval nth
       res = POLY_COEFFS[0][nth]
-      for i in numba.literal_unroll(range(1, D + 1)):
+      for i in numba.literal_unroll(range(1, NCOEFFS)):
         res = res * locx + POLY_COEFFS[i][nth]
       return res
 
