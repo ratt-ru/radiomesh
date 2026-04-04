@@ -292,7 +292,7 @@ def eval_es_kernel(
 
   SUPPORT = kernel.support
   HALF_SUPPORT = kernel.half_support
-  BETAK = kernel.support * kernel.beta
+  BETAK = SUPPORT * kernel.beta
   MU = kernel.mu
   ANALYTIC = kernel.analytic
 
@@ -385,14 +385,15 @@ class ESKernel:
   single: bool = False
   # Is w gridding enabled
   apply_w: dataclasses.InitVar[bool] = False
-  # Kernel support. If None, computed from epsilon and apply_w via heuristic.
-  support: int | None = None
+  # Optional explicit support. If -1, computed from epsilon and apply_w.
+  support: int = -1
 
   def __post_init__(self, apply_w):
-    """Compute heuristic support from epsilon and apply_w if not provided."""
-    if self.support is None:
-      factor = 3.0 if apply_w else 2.0
-      self.support = int(math.ceil(math.log10(factor * 1.0 / self.epsilon))) + 1
+    if self.support <= 0:
+      ndim = 3.0 if apply_w else 2.0
+      self.support = int(math.ceil(math.log10(ndim * 1.0 / self.epsilon))) + 1
+
+    assert self.support > 0
 
   @staticmethod
   def from_kernel_db(
