@@ -117,7 +117,7 @@ def scan_data(visibilities, weight, flag, uvw, frequencies, gridding=False):
           wmin_d = min(wmin_d, w)
           wmax_d = max(wmax_d, w)
 
-  return wmin_d, wmax_d
+  return nvis, wmin_d, wmax_d
 
 
 def test_uvw_scan(uvw_coordinates, frequencies):
