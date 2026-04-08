@@ -16,5 +16,5 @@ class KernelSelectionError(ValueError):
   - Increasing ``oversampling`` toward 2.5.
   - Setting ``single=False`` if single precision was requested.
   - Setting ``analytic=True`` to bypass KernelDB selection entirely and use
-    the analytic kernel with manually specified ``beta`` and ``mu``.
+    the analytic kernel with manually specified ``beta`` and ``e0``.
   """

@@ -1,8 +1,8 @@
 """Tests for polynomial ES kernel approximation.
 
 Verifies that:
-- mu == 0.5 with analytic=True uses the sqrt path
-- polynomial and analytic evaluations of the same (W, betak, mu) agree to
+- e0 == 0.5 with analytic=True uses the sqrt path
+- polynomial and analytic evaluations of the same (W, betak, e0) agree to
   within numerical tolerance, tested directly via generate_poly_coeffs
 - ESKernel with analytic=False selects parameters from KERNEL_DB
 - polynomial kernel returns 0 outside support bounds
@@ -45,14 +45,14 @@ def _make_eval_fn(kernel: ESKernel):
 
 
 # ---------------------------------------------------------------------------
-# Test 1: analytic=True + mu=0.5 uses the sqrt path
+# Test 1: analytic=True + e0=0.5 uses the sqrt path
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("apply_w", [False, True], ids=["ndim2", "ndim3"])
-def test_sqrt_path_for_mu_half(apply_w):
-  """analytic=True with mu=0.5 evaluates via exp(betak*(sqrt(1-x^2)-1))."""
-  kernel = ESKernel(analytic=True, mu=0.5, apply_w=apply_w)
+def test_sqrt_path_for_e0_half(apply_w):
+  """analytic=True with e0=0.5 evaluates via exp(betak*(sqrt(1-x^2)-1))."""
+  kernel = ESKernel(analytic=True, e0=0.5, apply_w=apply_w)
   fn = _make_eval_fn(kernel)
 
   HALF_SUPPORT = kernel.half_support
@@ -72,7 +72,7 @@ def test_sqrt_path_for_mu_half(apply_w):
 
 
 # ---------------------------------------------------------------------------
-# Test 2: polynomial matches analytic for the same (W, betak, mu)
+# Test 2: polynomial matches analytic for the same (W, betak, e0)
 # Uses generate_poly_coeffs_numpy directly to avoid ESKernel support-mismatch issues
 # ---------------------------------------------------------------------------
 
@@ -90,11 +90,11 @@ def _poly_eval(coeffs: tuple, W: int, x: float) -> float:
   return res
 
 
-def _analytic_eval(betak: float, mu: float, x: float) -> float:
+def _analytic_eval(betak: float, e0: float, x: float) -> float:
   tmp = (1.0 - x) * (1.0 + x)
   if tmp <= 0.0:
     return 0.0
-  return math.exp(betak * (math.pow(tmp, mu) - 1.0))
+  return math.exp(betak * (math.pow(tmp, e0) - 1.0))
 
 
 @pytest.mark.parametrize(
@@ -104,13 +104,13 @@ def test_polynomial_matches_analytic(entry):
   """Polynomial approximation agrees with the analytic kernel to within 1e-12."""
   SUPPORT = entry.support
   betak = entry.beta * SUPPORT
-  mu = entry.mu
+  e0 = entry.e0
 
-  coeffs = generate_poly_coeffs_numpy(SUPPORT, entry.beta, mu)
+  coeffs = generate_poly_coeffs_numpy(SUPPORT, entry.beta, e0)
 
   xs = np.linspace(-0.99, 0.99, 200)
   max_err = max(
-    abs(_poly_eval(coeffs, SUPPORT, float(x)) - _analytic_eval(betak, mu, float(x)))
+    abs(_poly_eval(coeffs, SUPPORT, float(x)) - _analytic_eval(betak, e0, float(x)))
     for x in xs
   )
   # The polynomial of degree D=W+3 achieves accuracy well within the
@@ -121,7 +121,7 @@ def test_polynomial_matches_analytic(entry):
 
 
 # ---------------------------------------------------------------------------
-# Test 3: ESKernel(analytic=False) selects beta/mu/support from KERNEL_DB
+# Test 3: ESKernel(analytic=False) selects beta/e0/support from KERNEL_DB
 # ---------------------------------------------------------------------------
 
 
@@ -129,7 +129,7 @@ def test_polynomial_matches_analytic(entry):
   "entry", _SAMPLE_ENTRIES, ids=lambda e: f"W{e.support}_ndim{e.ndim}"
 )
 def test_polynomial_kernel_uses_kernel_db(entry):
-  """from_kernel_db selects beta, mu, support from the KernelDB entry."""
+  """from_kernel_db selects beta, e0, support from the KernelDB entry."""
   k = ESKernel.from_kernel_db(
     epsilon=entry.epsilon,
     oversampling=entry.oversampling,
@@ -137,7 +137,7 @@ def test_polynomial_kernel_uses_kernel_db(entry):
   )
   assert k.support == entry.support
   assert k.beta == entry.beta
-  assert k.mu == entry.mu
+  assert k.e0 == entry.e0
 
 
 # ---------------------------------------------------------------------------

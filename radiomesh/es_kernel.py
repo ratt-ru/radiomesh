@@ -67,7 +67,7 @@ def select_kernel_params(
 
 
 def generate_poly_coeffs_numpy(
-  support: int, beta: float, mu: float
+  support: int, beta: float, e0: float
 ) -> tuple[tuple[float, ...], ...]:
   """Compute polynomial coefficients of an ES kernel with
    the given parameters.
@@ -81,7 +81,7 @@ def generate_poly_coeffs_numpy(
   Args:
     support: kernel support (number of sub-intervals).
     beta: beta parameter.
-    mu: exponent parameter; equivalent to ``e0`` in ducc0's KernelParams.
+    e0: exponent parameter.
 
   Returns:
     Nested tuple of shape ``(D+1) x support`` where ``D = support + 3``.
@@ -94,8 +94,8 @@ def generate_poly_coeffs_numpy(
   def es_kernel(v: np.ndarray) -> np.ndarray:
     tmp = (1.0 - v) * (1.0 + v)  # 1 - v^2; may be negative outside [-1,1]
     valid = tmp >= 0.0
-    safe_tmp = np.where(valid, tmp, 0.0)  # avoid pow(negative, mu)
-    return np.where(valid, np.exp(betak * (np.power(safe_tmp, mu) - 1.0)), 0.0)
+    safe_tmp = np.where(valid, tmp, 0.0)  # avoid pow(negative, e0)
+    return np.where(valid, np.exp(betak * (np.power(safe_tmp, e0) - 1.0)), 0.0)
 
   coeff = np.empty((D + 1, support))
 
@@ -220,12 +220,12 @@ def eval_es_kernel(
   HALF_SUPPORT = kernel.half_support
   BETA = kernel.beta
   BETAK = SUPPORT * BETA
-  MU = kernel.mu
+  MU = kernel.e0
   ANALYTIC = kernel.analytic
 
   if ANALYTIC:
     if MU == 0.5:
-      # mu == 0.5: fast sqrt variant
+      # e0 == 0.5: fast sqrt variant
       def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
         x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
         value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
@@ -233,7 +233,7 @@ def eval_es_kernel(
         # exactly, consistent with the polynomial branch.
         return value if -1.0 < x < 1.0 else 0.0
     else:
-      # Full analytic version: exp(betak * ((1 - x^2)^mu - 1))
+      # Full analytic version: exp(betak * ((1 - x^2)^e0 - 1))
       def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
         x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
         value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
@@ -288,9 +288,7 @@ def eval_es_kernel(
 @dataclasses.dataclass(slots=True, eq=True, unsafe_hash=True)
 class ESKernel:
   """Defines an ES Kernel of the form
-  :code:`math.exp(beta * (math.pow(1.0 - x * x, mu) - 1.0))`
-
-  Note: ``mu`` is equivalent to ``e0`` in ducc0's ``KernelParams``.
+  :code:`math.exp(beta * (math.pow(1.0 - x * x, e0) - 1.0))`
   """
 
   # Desired wgridder accuracy
@@ -300,9 +298,9 @@ class ESKernel:
   oversampling: float = 2.0
   # ES kernel parameters
   beta: float = 2.3
-  # Exponent in (1 - x^2)^mu. Equivalent to e0 in ducc0's KernelParams.
-  mu: float = 0.5
-  # If True (default), evaluate analytically. mu == 0.5 uses the fast sqrt
+  # Exponent in (1 - x^2)^e0.
+  e0: float = 0.5
+  # If True (default), evaluate analytically. e0 == 0.5 uses the fast sqrt
   # variant; otherwise uses exp(pow(...)). If False, use polynomial approximation.
   analytic: bool = True
   # Single (float32) precision. Selects the appropriate KernelDB partition
@@ -340,7 +338,7 @@ class ESKernel:
       apply_w: True for w-gridding (3-D), False for 2-D gridding.
       single: True for single (float32) precision, False for double.
       analytic: If False (default), use polynomial evaluation. If True,
-        use analytic evaluation with the KernelDB beta/mu parameters.
+        use analytic evaluation with the KernelDB beta/e0 parameters.
 
     Raises:
       KernelSelectionError: if no matching entry exists in KERNEL_DB.
@@ -351,7 +349,7 @@ class ESKernel:
       epsilon=epsilon,
       oversampling=entry.oversampling,
       beta=entry.beta,
-      mu=entry.mu,
+      e0=entry.e0,
       analytic=analytic,
       single=single,
       support=entry.support,

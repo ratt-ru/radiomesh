@@ -78,7 +78,7 @@ def explicit_gridder(
   return res / n
 
 
-def taper_trapz(domain, alpha=5, beta=2.3, mu=0.5):
+def taper_trapz(domain, alpha=5, beta=2.3, e0=0.5):
   npix = domain.size
   res = np.zeros(npix, dtype=np.float64)
   half_alpha = alpha / 2
@@ -87,7 +87,7 @@ def taper_trapz(domain, alpha=5, beta=2.3, mu=0.5):
   betak = alpha * beta
   for i, k in enumerate(domain):
     kern[...] = 0.0
-    tmp = np.cos(-2 * np.pi * k * x) * _es_kernel(x / half_alpha, kern, betak, mu)
+    tmp = np.cos(-2 * np.pi * k * x) * _es_kernel(x / half_alpha, kern, betak, e0)
     res[i] = np.trapezoid(tmp, x)
   return res
 
@@ -102,7 +102,7 @@ def test_tapers(ms_name):
   sigma = 2.0
   alpha = 10
   beta = 2.3
-  mu = 0.5
+  e0 = 0.5
 
   dt = xr.open_datatree(ms_name, engine="xarray-ms:msv2")
   dt_ms = dt[dt.groups[1]]
@@ -121,11 +121,11 @@ def test_tapers(ms_name):
   x = (-(nx // 2) + np.arange(nx)) * cell
   y = (-(ny // 2) + np.arange(ny)) * cell
 
-  xtaper = grid_corrector(x, alpha, beta, mu)
-  xtaper_trapz = taper_trapz(x, alpha, beta, mu)
+  xtaper = grid_corrector(x, alpha, beta, e0)
+  xtaper_trapz = taper_trapz(x, alpha, beta, e0)
   xdiff = np.abs(xtaper - xtaper_trapz)
-  ytaper = grid_corrector(y, alpha, beta, mu)
-  ytaper_trapz = taper_trapz(y, alpha, beta, mu)
+  ytaper = grid_corrector(y, alpha, beta, e0)
+  ytaper_trapz = taper_trapz(y, alpha, beta, e0)
   ydiff = np.abs(ytaper - ytaper_trapz)
 
   assert np.allclose(1 + xdiff, 1, atol=1e-10, rtol=1e-10)
@@ -147,12 +147,12 @@ def test_tapers(ms_name):
   dw = 1 / (2 * sigma * np.abs(nm1).max())
   nw = int(np.ceil((wmax - wmin) / dw)) + alpha
   w0 = wmin - dw * (alpha - 1) / 2
-  wcorrector = grid_corrector(nm1 * dw, alpha, beta, mu)
+  wcorrector = grid_corrector(nm1 * dw, alpha, beta, e0)
   wgrid = w0 + np.arange(nw) * dw
   for ww in w[0::100]:
     res = np.exp(-2j * np.pi * ww * nm1)
     z = (wgrid - ww) / dw
-    zkern = es_kernel(z, beta, mu, alpha)
+    zkern = es_kernel(z, beta, e0, alpha)
     tmp = np.exp(-2j * np.pi * nm1[:, :, None] * wgrid[None, None, :])
     tmp2 = tmp * zkern[None, None, :]
     res2 = np.sum(tmp2, axis=-1)

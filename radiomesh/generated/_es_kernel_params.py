@@ -14,7 +14,7 @@ class KernelParams(NamedTuple):
   oversampling: float  # oversampling factor
   epsilon: float  # error bound
   beta: float  # beta parameter (scale by width before use)
-  mu: float  # exponent in (1-x^2)^mu
+  e0: float  # exponent in (1-x^2)^e0
   ndim: int  # number of dimensions this entry applies to
   single: bool  # whether single precision is sufficient
 

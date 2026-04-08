@@ -110,7 +110,7 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
       nw,
       wgrid_params.kernel.support,
       wgrid_params.kernel.beta,
-      wgrid_params.kernel.mu,
+      wgrid_params.kernel.e0,
       usign,
       vsign,
     )
@@ -133,7 +133,7 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
       wgt_func,
       alpha=wgrid_params.kernel.support,
       beta=wgrid_params.kernel.beta,
-      mu=wgrid_params.kernel.mu,
+      e0=wgrid_params.kernel.e0,
       usign=usign,
       vsign=vsign,
     )
