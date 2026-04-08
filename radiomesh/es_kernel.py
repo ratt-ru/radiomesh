@@ -4,14 +4,118 @@ import dataclasses
 import math
 from typing import Callable, Tuple
 
+import numba
 import numpy as np
 from llvmlite import ir
 from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.core.typing.templates import Signature
 from numba.extending import intrinsic
+from numpy.polynomial.chebyshev import cheb2poly, chebinterpolate
 
+from radiomesh.errors import KernelSelectionError
+from radiomesh.generated._es_kernel_params import KERNEL_DB, KernelParams
 from radiomesh.literals import DatumLiteral
+
+
+def select_kernel_params(
+  epsilon: float,
+  oversampling: float,
+  ndim: int,
+  single: bool,
+) -> KernelParams:
+  """Return the KernelDB entry with the smallest support satisfying all constraints.
+
+  Finds entries where ``ofactor <= oversampling``,
+  ``epsilon <= target_epsilon``, ``ndim == ndim``, ``single == single``, then
+  returns the one with minimum width (support).
+
+  Args:
+    epsilon: required accuracy.
+    oversampling: target oversampling factor.
+    ndim: dimensionality — 2 for 2D gridding, 3 for w-gridding.
+    single: True for single (float32) precision, False for double.
+
+  Raises:
+    ValueError: if no matching entry exists in KERNEL_DB.
+  """
+  best: KernelParams | None = None
+  for k in KERNEL_DB:
+    if (
+      k.ndim == ndim
+      and k.single == single
+      and k.oversampling <= oversampling
+      and k.epsilon <= epsilon
+      and (best is None or k.support < best.support)
+    ):
+      best = k
+  if best is None:
+    prec = "single" if single else "double"
+    ndim_label = {2: "2-D gridding", 3: "w-gridding (3-D)"}.get(ndim, f"ndim={ndim}")
+    raise KernelSelectionError(
+      f"No KernelDB entry satisfies epsilon={epsilon:.2e}, "
+      f"oversampling={oversampling}, {ndim_label}, {prec} precision.\n"
+      f"Supported ranges for this (ndim={ndim}, single={single}) combination: "
+      f"oversampling [1.20, 2.50], "
+      f"epsilon >= minimum achievable at the requested oversampling.\n"
+      f"Options: increase epsilon, increase oversampling toward 2.5"
+      + (", or use single=False" if single else "")
+      + ", or set analytic=True to bypass KernelDB selection."
+    )
+  return best
+
+
+def generate_poly_coeffs_numpy(
+  support: int, beta: float, e0: float
+) -> tuple[tuple[float, ...], ...]:
+  """Compute polynomial coefficients of an ES kernel with
+   the given parameters.
+
+  Delegates Chebyshev interpolation to
+  :func:`numpy.polynomial.chebyshev.chebinterpolate` and the
+  Chebyshev-to-monomial conversion to
+  :func:`numpy.polynomial.chebyshev.cheb2poly`, replacing the manual
+  DCT sum and recurrence in the pure-Python version.
+
+  Args:
+    support: kernel support (number of sub-intervals).
+    beta: beta parameter.
+    e0: exponent parameter.
+
+  Returns:
+    Nested tuple of shape ``(D+1) x support`` where ``D = support + 3``.
+    ``coeffs[j][i]`` is the coefficient of ``x^(support-j)`` for sub-interval ``i``
+    (Horner order: index 0 is the leading / highest-power coefficient).
+  """
+  D = support + 3
+  betak = beta * support
+
+  def es_kernel(v: np.ndarray) -> np.ndarray:
+    tmp = (1.0 - v) * (1.0 + v)  # 1 - v^2; may be negative outside [-1,1]
+    valid = tmp >= 0.0
+    safe_tmp = np.where(valid, tmp, 0.0)  # avoid pow(negative, e0)
+    return np.where(valid, np.exp(betak * (np.power(safe_tmp, e0) - 1.0)), 0.0)
+
+  coeff = np.empty((D + 1, support))
+
+  for i in range(support):
+    left = -1.0 + 2.0 * i / support
+    right = -1.0 + 2.0 * (i + 1) / support
+    mid = (left + right) * 0.5
+    half = (right - left) * 0.5
+
+    # Exact Chebyshev interpolation at D+1 Type-I nodes on [-1, 1].
+    # The function is expressed in the local sub-interval coordinate
+    # (locx ∈ [-1, 1]) so no domain remapping is needed after this step.
+    cheb_c = chebinterpolate(lambda locx, m=mid, h=half: es_kernel(locx * h + m), D)
+
+    # Convert ascending Chebyshev coefficients to ascending power-basis
+    # coefficients then store in Horner (descending) order:
+    # coeff[j][i] = coeff of x^(D-j)
+    poly_c = cheb2poly(cheb_c)  # ascending: poly_c[k] = coeff of x^k
+    coeff[:, i] = poly_c[::-1]  # reverse to Horner order
+
+  return tuple(tuple(float(v) for v in row) for row in coeff)
 
 
 @intrinsic(prefer_literal=True)
@@ -113,25 +217,46 @@ def eval_es_kernel(
 
   SUPPORT = kernel.support
   HALF_SUPPORT = kernel.half_support
-  BETAK = kernel.support * kernel.beta
-  MU = kernel.mu
+  BETA = kernel.beta
+  BETAK = SUPPORT * BETA
+  MU = kernel.e0
+  ANALYTIC = kernel.analytic
 
-  if MU == 0.5:
-    # Use the faster sqrt function
-    def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
-      x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
-      value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
-      # Above is only defined for [-1.0, 1.0]
-      # Zero after possible vectorisation (SIMD) of the above expression
-      return value if -1.0 <= x <= 1.0 else 0.0
+  if ANALYTIC:
+    if MU == 0.5:
+      # e0 == 0.5: fast sqrt variant
+      def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
+        x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
+        value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
+        # Return value for (-1.0, 1.0) only; boundary taps return 0
+        # exactly, consistent with the polynomial branch.
+        return value if -1.0 < x < 1.0 else 0.0
+    else:
+      # Full analytic version: exp(betak * ((1 - x^2)^e0 - 1))
+      def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
+        x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
+        value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
+        # Return value for (-1.0, 1.0) only; boundary taps return 0
+        # exactly, consistent with the polynomial branch.
+        return value if -1.0 < x < 1.0 else 0.0
   else:
+    # Polynomial approximation: support piecewise degree-(support+3)
+    # polynomials on [-1, 1].
+    # Coefficients are computed at JIT-compile time via Chebyshev fitting
+    POLY_COEFFS = generate_poly_coeffs_numpy(SUPPORT, BETA, MU)
+    NCOEFFS = len(POLY_COEFFS)
 
     def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
       x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
-      value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
-      # Above is only defined for [-1.0, 1.0]
-      # Zero after possible vectorisation (SIMD) of the above expression
-      return value if -1.0 <= x <= 1.0 else 0.0
+      xrel = SUPPORT * 0.5 * (x + 1.0)
+      nth = min(int(xrel), SUPPORT - 1)
+      locx = ((xrel - nth) - 0.5) * 2.0
+      # Horner evaluation over coefficients for sub-interval nth
+      value = POLY_COEFFS[0][nth]
+      for i in numba.literal_unroll(range(1, NCOEFFS)):
+        value = value * locx + POLY_COEFFS[i][nth]
+      # Return value for (-1.0, 1.0) only - boundary taps return 0 exactly,
+      return value if -1.0 < x < 1.0 else 0.0
 
   return_type = types.Tuple([types.float64] * kernel.support)
   sig = return_type(kernel_literal, grid, pixel_start)
@@ -161,25 +286,70 @@ def eval_es_kernel(
 @dataclasses.dataclass(slots=True, eq=True, unsafe_hash=True)
 class ESKernel:
   """Defines an ES Kernel of the form
-  :code:`math.exp(beta * (math.pow(1.0 - x * x, mu) - 1.0))`"""
+  :code:`math.exp(beta * (math.pow(1.0 - x * x, e0) - 1.0))`
+  """
 
   # Desired wgridder accuracy
   epsilon: float = 2e-13
   # Oversampling factor.
-  # Corresponds to :code:`ofactor` within the ducc0 wgridder code base
-  oversampling: int = 2
+  oversampling: float = 2.0
   # ES kernel parameters
   beta: float = 2.3
-  mu: float = 0.5
+  # Exponent in (1 - x^2)^e0.
+  e0: float = 0.5
+  # If True (default), evaluate analytically. e0 == 0.5 uses the fast sqrt
+  # variant; otherwise uses exp(pow(...)). If False, use polynomial approximation.
+  analytic: bool = True
+  # Single (float32) precision. Selects the appropriate KernelDB partition
+  # when analytic=False.
+  single: bool = False
   # Is w gridding enabled
   apply_w: dataclasses.InitVar[bool] = False
-  # Kernel support
-  support: int = dataclasses.field(init=False)
+  # Optional explicit support. If -1, computed from epsilon and apply_w.
+  support: int = -1
 
   def __post_init__(self, apply_w):
-    """Determine the support given the other kernel parameters"""
-    factor = 3.0 if apply_w else 2.0
-    self.support = int(math.ceil(math.log10(factor * 1.0 / self.epsilon))) + 1
+    if self.support <= 0:
+      ndim = 3.0 if apply_w else 2.0
+      self.support = int(math.ceil(math.log10(ndim * 1.0 / self.epsilon))) + 1
+
+    assert self.support > 0
+
+  @staticmethod
+  def from_kernel_db(
+    epsilon: float,
+    oversampling: float = 2.0,
+    apply_w: bool = False,
+    single: bool = False,
+    analytic: bool = False,
+  ) -> ESKernel:
+    """Construct an :class:`ESKernel` by selecting from a list of tabulated kerenels.
+
+    Finds the KernelDB entry with the smallest support satisfying all constraints,
+    then returns a kernel configured with those parameters.
+
+    Args:
+      epsilon: required accuracy.
+      oversampling: oversampling factor.
+      apply_w: True for w-gridding (3-D), False for 2-D gridding.
+      single: True for single (float32) precision, False for double.
+      analytic: If False (default), use polynomial evaluation. If True,
+        use analytic evaluation with the KernelDB beta/e0 parameters.
+
+    Raises:
+      KernelSelectionError: if no matching entry exists in KERNEL_DB.
+    """
+    ndim = 3 if apply_w else 2
+    entry = select_kernel_params(epsilon, oversampling, ndim, single)
+    return ESKernel(
+      epsilon=epsilon,
+      oversampling=entry.oversampling,
+      beta=entry.beta,
+      e0=entry.e0,
+      analytic=analytic,
+      single=single,
+      support=entry.support,
+    )
 
   @property
   def half_support(self) -> float:

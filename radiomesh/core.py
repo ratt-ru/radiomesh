@@ -15,7 +15,7 @@ ifftshift = partial(np.fft.ifftshift, axes=(-2, -1))
 JIT_OPTIONS = {"nogil": True, "cache": True, "error_model": "numpy", "fastmath": False}
 
 
-def grid_corrector(domain, alpha, beta, mu):
+def grid_corrector(domain, alpha, beta, e0):
   """
   Use Gauss-Legendre quadrature to compute the grid corrector (taper).
   """
@@ -29,7 +29,7 @@ def grid_corrector(domain, alpha, beta, mu):
   wgt = wgt[idx]
   shape = np.shape(domain)
   xkern = np.zeros(q.size)
-  _es_kernel(q, xkern, alpha * beta, mu)
+  _es_kernel(q, xkern, alpha * beta, e0)
   if len(shape) > 1:
     z = np.einsum("ij,k->ijk", domain, q)
   else:
@@ -40,31 +40,31 @@ def grid_corrector(domain, alpha, beta, mu):
 
 
 @njit(**JIT_OPTIONS, inline="always")
-def _es_kernel(x, kern, betak, mu):
+def _es_kernel(x, kern, betak, e0):
   """
   Scaled version of the kernel
 
-  exp(betak * (power(1 - x ** 2, mu) - 1))
+  exp(betak * (power(1 - x ** 2, e0) - 1))
 
   i.e. support squashed to [-1, 1] with betak = beta * alpha
   """
   kern[...] = 0.0
   mask = np.abs(x) <= 1
-  kern[mask] = np.exp(betak * (np.power(1 - x[mask] ** 2, mu) - 1))
+  kern[mask] = np.exp(betak * (np.power(1 - x[mask] ** 2, e0) - 1))
   return kern
 
 
 @njit(**JIT_OPTIONS)
-def es_kernel(x, beta, mu, alpha):
+def es_kernel(x, beta, e0, alpha):
   """
   Unscaled version of the kernel
 
-  exp(alpha * beta * (power(1 - (2*x/alpha) ** 2, mu) - 1))
+  exp(alpha * beta * (power(1 - (2*x/alpha) ** 2, e0) - 1))
 
   i.e. x is in pixel units
   """
   kern = np.zeros_like(x, dtype=x.dtype)
-  _es_kernel(2 * x / alpha, kern, beta * alpha, mu)
+  _es_kernel(2 * x / alpha, kern, beta * alpha, e0)
   return kern
 
 
@@ -87,7 +87,7 @@ def grid_data(
   wgt_func: Callable,
   alpha: float = 10,
   beta: float = 2.3,
-  mu: float = 0.5,
+  e0: float = 0.5,
   usign: float = 1,
   vsign: float = -1,
 ):
@@ -141,11 +141,11 @@ def grid_data(
         x_idx = (xle + pos) % ngx
         # kernel coordinates
         x = (pos - ug + xle) / half_supp
-        _es_kernel(x, xkern, betak, mu)
+        _es_kernel(x, xkern, betak, e0)
 
         y_idx = (yle + pos) % ngy
         y = (pos - vg + yle) / half_supp
-        _es_kernel(y, ykern, betak, mu)
+        _es_kernel(y, ykern, betak, e0)
 
         for c in range(ncorr):
           wc = wgt[c]
@@ -176,7 +176,7 @@ def vis2im(
   sigma: float = 2.0,
   alpha: float = 10,
   beta: float = 2.3,
-  mu: float = 0.5,
+  e0: float = 0.5,
   usign: float = 1,
   vsign: float = 1,
 ):
@@ -185,7 +185,7 @@ def vis2im(
   while ngx % 2:
     ngx = good_size(ngx + 1)
   domain = np.linspace(-0.5, 0.5, ngx, endpoint=False)
-  xcorrector = grid_corrector(domain, alpha, beta, mu)
+  xcorrector = grid_corrector(domain, alpha, beta, e0)
   padxl = (ngx - nx) // 2
   padxr = ngx - nx - padxl
   slcx = slice(padxl, -padxr)
@@ -193,7 +193,7 @@ def vis2im(
   while ngy % 2:
     ngy = good_size(ngy + 1)
   domain = np.linspace(-0.5, 0.5, ngy, endpoint=False)
-  ycorrector = grid_corrector(domain, alpha, beta, mu)
+  ycorrector = grid_corrector(domain, alpha, beta, e0)
   padyl = (ngy - ny) // 2
   padyr = ngy - ny - padyl
   slcy = slice(padyl, -padyr)
@@ -221,7 +221,7 @@ def vis2im(
     wgt_func,
     alpha=alpha,
     beta=beta,
-    mu=mu,
+    e0=e0,
     usign=usign,
     vsign=vsign,
   )
@@ -256,7 +256,7 @@ def wgrid_data(
   nw: int,
   alpha: float = 5,
   beta: float = 2.3,
-  mu: float = 0.5,
+  e0: float = 0.5,
   usign: float = 1,
   vsign: float = 1,
 ):
@@ -317,11 +317,11 @@ def wgrid_data(
         x_idx = (xle + pos) % ngx
         # kernel coordinates
         x = (pos - ug + xle) / half_supp
-        _es_kernel(x, xkern, betak, mu)
+        _es_kernel(x, xkern, betak, e0)
 
         y_idx = (yle + pos) % ngy
         y = (pos - vg + yle) / half_supp
-        _es_kernel(y, ykern, betak, mu)
+        _es_kernel(y, ykern, betak, e0)
 
         z_idx = zle + pos
         z = (pos - wg + zle) / half_supp
@@ -329,7 +329,7 @@ def wgrid_data(
         # z_idx = np.arange(nw)
         # z = (wgrid - w_tmp) / dw / half_supp
         # but only within the support of the kernel
-        _es_kernel(z, zkern, betak, mu)
+        _es_kernel(z, zkern, betak, e0)
 
         for c in range(ncorr):
           wc = wgt[c]
@@ -361,7 +361,7 @@ def vis2im_wgrid(
   sigma: float = 2,
   alpha: float = 10,
   beta: float = 2.3,
-  mu: float = 0.5,
+  e0: float = 0.5,
   usign: float = 1,
   vsign: float = 1,
 ):
@@ -371,7 +371,7 @@ def vis2im_wgrid(
   while ngx % 2:
     ngx = good_size(ngx + 1)
   domain = np.linspace(-0.5, 0.5, ngx, endpoint=False)
-  xcorrector = grid_corrector(domain, alpha, beta, mu)
+  xcorrector = grid_corrector(domain, alpha, beta, e0)
   padxl = (ngx - nx) // 2
   padxr = ngx - nx - padxl
   slcx = slice(padxl, -padxr)
@@ -380,7 +380,7 @@ def vis2im_wgrid(
   while ngy % 2:
     ngy = good_size(ngy + 1)
   domain = np.linspace(-0.5, 0.5, ngy, endpoint=False)
-  ycorrector = grid_corrector(domain, alpha, beta, mu)
+  ycorrector = grid_corrector(domain, alpha, beta, e0)
   padyl = (ngy - ny) // 2
   padyr = ngy - ny - padyl
   slcy = slice(padyl, -padyr)
@@ -402,7 +402,7 @@ def vis2im_wgrid(
   dw = 1.0 / (2 * sigma * np.abs(nm1).max())
   nw = int(np.ceil((wmax - wmin) / dw)) + alpha
   w0 = (wmin + wmax) / 2 - dw * (nw - 1) / 2
-  wcorrector = grid_corrector(nm1 * dw, alpha, beta, mu) * (nm1 + 1)
+  wcorrector = grid_corrector(nm1 * dw, alpha, beta, e0) * (nm1 + 1)
 
   # this should be compiled in the overload
   vis_func, wgt_func = stokes_funcs(jones, product, pol, nc)
@@ -428,7 +428,7 @@ def vis2im_wgrid(
     nw,
     alpha=alpha,
     beta=beta,
-    mu=mu,
+    e0=e0,
     usign=usign,
     vsign=vsign,
   )

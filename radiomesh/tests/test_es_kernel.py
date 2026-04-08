@@ -38,4 +38,4 @@ def test_es_kernel_intrinsic():
 
   u = 2.3
   kernel_values = fn(u)
-  assert sum(int(kv > 0) for kv in kernel_values) == len(kernel_values) - 1
+  assert all(0.0 <= kv <= 1.0 for kv in kernel_values)

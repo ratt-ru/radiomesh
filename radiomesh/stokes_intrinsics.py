@@ -6,7 +6,7 @@ from numba.core import cgutils, types
 from numba.core.errors import RequireLiteralValue, TypingError
 from numba.extending import intrinsic
 
-from radiomesh._stokes_expr import CONVERT_FNS
+from radiomesh.generated._stokes_expr import CONVERT_FNS
 from radiomesh.literals import SchemaLiteral
 
 LINEAR_POLS = ("XX", "XY", "YX", "YY")
