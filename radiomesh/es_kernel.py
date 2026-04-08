@@ -26,8 +26,7 @@ def select_kernel_params(
 ) -> KernelParams:
   """Return the KernelDB entry with the smallest support satisfying all constraints.
 
-  Mirrors ``selectKernel<T>(ofactor, ndim, epsilon)`` from ducc0's
-  ``gridding_kernel.h``.  Finds entries where ``ofactor <= oversampling``,
+  Finds entries where ``ofactor <= oversampling``,
   ``epsilon <= target_epsilon``, ``ndim == ndim``, ``single == single``, then
   returns the one with minimum width (support).
 
@@ -257,7 +256,6 @@ def eval_es_kernel(
       for i in numba.literal_unroll(range(1, NCOEFFS)):
         value = value * locx + POLY_COEFFS[i][nth]
       # Return value for (-1.0, 1.0) only - boundary taps return 0 exactly,
-      # consistent with _poly_eval and ducc0's PolynomialKernel::eval.
       return value if -1.0 < x < 1.0 else 0.0
 
   return_type = types.Tuple([types.float64] * kernel.support)
@@ -294,7 +292,6 @@ class ESKernel:
   # Desired wgridder accuracy
   epsilon: float = 2e-13
   # Oversampling factor.
-  # Corresponds to :code:`ofactor` within the ducc0 wgridder code base
   oversampling: float = 2.0
   # ES kernel parameters
   beta: float = 2.3
@@ -326,11 +323,10 @@ class ESKernel:
     single: bool = False,
     analytic: bool = False,
   ) -> ESKernel:
-    """Construct an :class:`ESKernel` by selecting parameters from the KernelDB.
+    """Construct an :class:`ESKernel` by selecting from a list of tabulated kerenels.
 
-    Mirrors ``selectKernel`` from ducc0: finds the KernelDB entry with the
-    smallest support satisfying all constraints, then returns a kernel
-    configured with those parameters.
+    Finds the KernelDB entry with the smallest support satisfying all constraints,
+    then returns a kernel configured with those parameters.
 
     Args:
       epsilon: required accuracy.

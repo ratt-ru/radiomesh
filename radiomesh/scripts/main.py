@@ -10,8 +10,7 @@ def main():
   _ = subparsers.add_parser("gen-expr", help="Generate sympy expressions")
   _ = subparsers.add_parser(
     "gen-kernel-params",
-    help="Download ducc0 KernelDB and "
-    "regenerate radiomesh/generated/_es_kernel_params.py",
+    help="Generate radiomesh/generated/_es_kernel_params.py",
   )
   args = parser.parse_args()
 
