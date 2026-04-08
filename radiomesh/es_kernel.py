@@ -66,87 +66,11 @@ def select_kernel_params(
   return best
 
 
-def generate_poly_coeffs(
-  W: int, betak: float, mu: float
-) -> tuple[tuple[float, ...], ...]:
-  """Generate polynomial approximation coefficients for the ES kernel.
-
-  Replicates ducc0's ``getCoeffs`` function (gridding_kernel.cc).
-
-  The ES kernel ``exp(betak * ((1 - v²)^mu - 1))`` is approximated on
-  ``[-1, 1]`` by ``W`` degree-``D`` polynomials, one per sub-interval.
-
-  Args:
-    W: kernel support (number of sub-intervals).
-    betak: scaled beta parameter — ``beta * W`` (i.e. ``ESKernel.beta * support``).
-    mu: exponent parameter; equivalent to ``e0`` in ducc0's KernelParams.
-
-  Returns:
-    Nested tuple of shape ``(D+1) x W`` where ``D = W + 3``.
-    ``coeffs[j][i]`` is the coefficient of ``x^(D-j)`` for sub-interval ``i``
-    (Horner order: index 0 is the leading / highest-power coefficient).
-  """
-  D = W + 3
-
-  def es_kernel(v: float) -> float:
-    tmp = (1.0 - v) * (1.0 + v)  # = 1 - v^2
-    if tmp < 0.0:
-      return 0.0
-    return math.exp(betak * (math.pow(tmp, mu) - 1.0))
-
-  # Chebyshev nodes on [-1, 1]
-  chebroot = [math.cos((2 * i + 1) * math.pi / (2 * D + 2)) for i in range(D + 1)]
-
-  # coeff[j][i] in output order (j = Horner step, i = sub-interval)
-  coeff = [[0.0] * W for _ in range(D + 1)]
-
-  for i in range(W):
-    left = -1.0 + 2.0 * i / W
-    right = -1.0 + 2.0 * (i + 1) / W
-
-    # Function values at Chebyshev nodes mapped to [l, r]
-    y = [
-      es_kernel(chebroot[j] * (right - left) * 0.5 + (right + left) * 0.5)
-      for j in range(D + 1)
-    ]
-    avg = sum(y) / (D + 1)
-    y = [v - avg for v in y]
-
-    # Chebyshev coefficients via DCT-I-like sum
-    lcf = [
-      sum(
-        2.0 / (D + 1) * y[k] * math.cos(j * (2 * k + 1) * math.pi / (2 * D + 2))
-        for k in range(D + 1)
-      )
-      for j in range(D + 1)
-    ]
-    lcf[0] *= 0.5
-
-    # Chebyshev-to-monomial conversion: C[j][k] = coeff of x^k in T_j(x)
-    C = [[0.0] * (D + 1) for _ in range(D + 1)]
-    C[0][0] = 1.0
-    if D >= 1:
-      C[1][1] = 1.0
-    for j in range(2, D + 1):
-      C[j][0] = -C[j - 2][0]
-      for k in range(1, j + 1):
-        C[j][k] = 2.0 * C[j - 1][k - 1] - C[j - 2][k]
-
-    # lcf2[k] = coefficient of x^k in the combined polynomial
-    lcf2 = [sum(C[j][k] * lcf[j] for j in range(D + 1)) for k in range(D + 1)]
-    lcf2[0] += avg
-
-    # Store in Horner order: coeff[j][i] = lcf2[D-j]  (x^(D-j) term)
-    for j in range(D + 1):
-      coeff[j][i] = lcf2[D - j]
-
-  return tuple(tuple(row) for row in coeff)
-
-
 def generate_poly_coeffs_numpy(
-  W: int, betak: float, mu: float
+  support: int, beta: float, mu: float
 ) -> tuple[tuple[float, ...], ...]:
-  """Numpy alternative to :func:`generate_poly_coeffs`.
+  """Compute polynomial coefficients of an ES kernel with
+   the given parameters.
 
   Delegates Chebyshev interpolation to
   :func:`numpy.polynomial.chebyshev.chebinterpolate` and the
@@ -155,27 +79,29 @@ def generate_poly_coeffs_numpy(
   DCT sum and recurrence in the pure-Python version.
 
   Args:
-    W: kernel support (number of sub-intervals).
-    betak: scaled beta parameter — ``beta * W`` (i.e. ``ESKernel.beta * support``).
+    support: kernel support (number of sub-intervals).
+    beta: beta parameter.
     mu: exponent parameter; equivalent to ``e0`` in ducc0's KernelParams.
 
   Returns:
-    Same nested tuple of shape ``(D+1) x W`` as :func:`generate_poly_coeffs`.
+    Nested tuple of shape ``(D+1) x support`` where ``D = support + 3``.
+    ``coeffs[j][i]`` is the coefficient of ``x^(support-j)`` for sub-interval ``i``
+    (Horner order: index 0 is the leading / highest-power coefficient).
   """
-  D = W + 3
+  D = support + 3
+  betak = beta * support
 
-  # Vectorised ES kernel: chebinterpolate passes an array, not a scalar
   def es_kernel(v: np.ndarray) -> np.ndarray:
     tmp = (1.0 - v) * (1.0 + v)  # 1 - v^2; may be negative outside [-1,1]
     valid = tmp >= 0.0
     safe_tmp = np.where(valid, tmp, 0.0)  # avoid pow(negative, mu)
     return np.where(valid, np.exp(betak * (np.power(safe_tmp, mu) - 1.0)), 0.0)
 
-  coeff = np.empty((D + 1, W))
+  coeff = np.empty((D + 1, support))
 
-  for i in range(W):
-    left = -1.0 + 2.0 * i / W
-    right = -1.0 + 2.0 * (i + 1) / W
+  for i in range(support):
+    left = -1.0 + 2.0 * i / support
+    right = -1.0 + 2.0 * (i + 1) / support
     mid = (left + right) * 0.5
     half = (right - left) * 0.5
 
@@ -292,7 +218,8 @@ def eval_es_kernel(
 
   SUPPORT = kernel.support
   HALF_SUPPORT = kernel.half_support
-  BETAK = SUPPORT * kernel.beta
+  BETA = kernel.beta
+  BETAK = SUPPORT * BETA
   MU = kernel.mu
   ANALYTIC = kernel.analytic
 
@@ -302,38 +229,36 @@ def eval_es_kernel(
       def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
         x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
         value = np.exp(BETAK * (np.sqrt(1.0 - x * x) - 1.0))
-        # Above is only defined for [-1.0, 1.0]
-        # Zero after possible vectorisation (SIMD) of the above expression
-        return value if -1.0 <= x <= 1.0 else 0.0
+        # Return value for (-1.0, 1.0) only; boundary taps return 0
+        # exactly, consistent with the polynomial branch.
+        return value if -1.0 < x < 1.0 else 0.0
     else:
       # Full analytic version: exp(betak * ((1 - x^2)^mu - 1))
       def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
         x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
         value = np.exp(BETAK * (np.power(1.0 - x * x, MU) - 1.0))
-        # Above is only defined for [-1.0, 1.0]
-        # Zero after possible vectorisation (SIMD) of the above expression
-        return value if -1.0 <= x <= 1.0 else 0.0
+        # Return value for (-1.0, 1.0) only; boundary taps return 0
+        # exactly, consistent with the polynomial branch.
+        return value if -1.0 < x < 1.0 else 0.0
   else:
-    # Polynomial approximation: W piecewise degree-(W+3) polynomials on [-1, 1].
+    # Polynomial approximation: support piecewise degree-(support+3)
+    # polynomials on [-1, 1].
     # Coefficients are computed at JIT-compile time via Chebyshev fitting
-    # (replicates ducc0's getCoeffs / PolynomialKernel::eval).
-    POLY_COEFFS = generate_poly_coeffs(SUPPORT, BETAK, MU)
+    POLY_COEFFS = generate_poly_coeffs_numpy(SUPPORT, BETA, MU)
     NCOEFFS = len(POLY_COEFFS)
 
     def kernel_fn(kernel_offset: int, grid: float, pixel_start: int) -> float:
       x = (kernel_offset + pixel_start - grid) / HALF_SUPPORT
-      if x <= -1.0 or x >= 1.0:
-        return 0.0
       xrel = SUPPORT * 0.5 * (x + 1.0)
-      nth = int(xrel)
-      if nth >= SUPPORT:
-        nth = SUPPORT - 1
+      nth = min(int(xrel), SUPPORT - 1)
       locx = ((xrel - nth) - 0.5) * 2.0
       # Horner evaluation over coefficients for sub-interval nth
-      res = POLY_COEFFS[0][nth]
+      value = POLY_COEFFS[0][nth]
       for i in numba.literal_unroll(range(1, NCOEFFS)):
-        res = res * locx + POLY_COEFFS[i][nth]
-      return res
+        value = value * locx + POLY_COEFFS[i][nth]
+      # Return value for (-1.0, 1.0) only - boundary taps return 0 exactly,
+      # consistent with _poly_eval and ducc0's PolynomialKernel::eval.
+      return value if -1.0 < x < 1.0 else 0.0
 
   return_type = types.Tuple([types.float64] * kernel.support)
   sig = return_type(kernel_literal, grid, pixel_start)

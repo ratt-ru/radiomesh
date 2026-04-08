@@ -14,7 +14,7 @@ import numba
 import numpy as np
 import pytest
 
-from radiomesh.es_kernel import ESKernel, eval_es_kernel, generate_poly_coeffs
+from radiomesh.es_kernel import ESKernel, eval_es_kernel, generate_poly_coeffs_numpy
 from radiomesh.generated._es_kernel_params import KERNEL_DB
 from radiomesh.literals import Datum
 
@@ -49,9 +49,10 @@ def _make_eval_fn(kernel: ESKernel):
 # ---------------------------------------------------------------------------
 
 
-def test_sqrt_path_for_mu_half():
+@pytest.mark.parametrize("apply_w", [False, True], ids=["ndim2", "ndim3"])
+def test_sqrt_path_for_mu_half(apply_w):
   """analytic=True with mu=0.5 evaluates via exp(betak*(sqrt(1-x^2)-1))."""
-  kernel = ESKernel(analytic=True, mu=0.5)
+  kernel = ESKernel(analytic=True, mu=0.5, apply_w=apply_w)
   fn = _make_eval_fn(kernel)
 
   HALF_SUPPORT = kernel.half_support
@@ -72,7 +73,7 @@ def test_sqrt_path_for_mu_half():
 
 # ---------------------------------------------------------------------------
 # Test 2: polynomial matches analytic for the same (W, betak, mu)
-# Uses generate_poly_coeffs directly to avoid ESKernel support-mismatch issues
+# Uses generate_poly_coeffs_numpy directly to avoid ESKernel support-mismatch issues
 # ---------------------------------------------------------------------------
 
 
@@ -105,7 +106,7 @@ def test_polynomial_matches_analytic(entry):
   betak = entry.beta * SUPPORT
   mu = entry.mu
 
-  coeffs = generate_poly_coeffs(SUPPORT, betak, mu)
+  coeffs = generate_poly_coeffs_numpy(SUPPORT, entry.beta, mu)
 
   xs = np.linspace(-0.99, 0.99, 200)
   max_err = max(
