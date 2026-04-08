@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Move testing and dev optional dependencies into PEP 735 groups (:pr:`58`)
 * Support polynomial kernels (:pr:`57`)
 * Improve OS yield function calls (:pr:`56`)
 * Add integer atomic locks, as well as atomic RMW (read/modify/write) operations (:pr:`55`)
