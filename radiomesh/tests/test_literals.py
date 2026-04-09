@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import pickle
 from functools import reduce
 
@@ -7,6 +8,7 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import intrinsic, overload
 
 from radiomesh.literals import Datum, DatumLiteral, is_datum_literal
+from radiomesh.tests.proc_utils import _init_numba_cache_debugging_with_capture
 
 
 def test_is_datum_literal():
@@ -76,3 +78,31 @@ def test_datum_literal_jit():
     return datum.literal_value
 
   assert fn() == value
+
+
+def _caching_worker(x, datum):
+  @numba.njit(cache=True, nogil=True)
+  def fn(x):
+    return f_impl(x, datum)
+
+  return fn(x)
+
+
+def test_datum_caching(tmp_path):
+  """Tests that Datum/DatumLiterals can be cached"""
+  stdout_f = tmp_path / "stdout.txt"
+  stderr_f = tmp_path / "stderr.txt"
+  datum = Datum((1, 2, 3))
+
+  with mp.get_context("spawn").Pool(
+    1,
+    initializer=_init_numba_cache_debugging_with_capture,
+    initargs=(str(tmp_path), str(stdout_f), str(stderr_f)),
+  ) as p:
+    assert p.apply(_caching_worker, args=(0.5, datum)) == 6.5
+    assert p.apply(_caching_worker, args=(0.5, datum)) == 6.5
+
+  combined = stdout_f.read_text() + stderr_f.read_text()
+  assert f"data saved to '{tmp_path}" in combined
+  assert f"data loaded from '{tmp_path}" in combined
+  assert f"index loaded from '{tmp_path}" in combined

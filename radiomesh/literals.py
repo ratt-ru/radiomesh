@@ -84,7 +84,7 @@ class Datum(Generic[H]):
 
 
 class DatumLiteral(Generic[H], types.Literal, types.Dummy):
-  """Numba literal type holding an arbitrary Datum object"""
+  """Numba literal type holding an arbitrary object"""
 
   def __init__(self, value: H):
     name = f"DatumLiteral[{type(value).__name__}]({value})"
