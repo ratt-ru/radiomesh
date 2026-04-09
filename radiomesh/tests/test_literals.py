@@ -63,3 +63,14 @@ def test_datum_literal():
   passed through njit, overloads and intrinsics"""
 
   assert f(1.0, Datum((2, 3, 4))) == 10.0
+
+
+def test_datum_literal_jit():
+  value = 4.0
+  datum = Datum(value)
+
+  @numba.njit(nogil=True)
+  def fn():
+    return datum.value
+
+  assert fn() == value
