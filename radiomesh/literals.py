@@ -4,6 +4,7 @@ from typing import Any, Callable, Generic, Hashable, Tuple, TypeVar
 
 from numba.core import types
 from numba.core.datamodel.models import OpaqueModel, register_default
+from numba.core.errors import TypingError
 from numba.extending import NativeValue, overload_attribute, typeof_impl, unbox
 
 
@@ -85,35 +86,19 @@ class Datum(Generic[H]):
 class DatumLiteral(Generic[H], types.Literal, types.Dummy):
   """Numba literal type holding an arbitrary Datum object"""
 
-  def __init__(self, value: Datum[H]):
-    if not isinstance(value, Datum):
-      raise TypeError(f"{value} of type {type(value)} must be a Datum")
-
-    name = f"DatumLiteral[{type(value.value).__name__}]({value})"
+  def __init__(self, value: H):
+    name = f"DatumLiteral[{type(value).__name__}]({value})"
     super(types.Dummy, self).__init__(name=name)
     self._literal_init(value)
 
-  def __reduce__(self):
-    return (DatumLiteral, (self.literal_value,))
-
-  def __eq__(self, other):
-    if not isinstance(other, DatumLiteral):
-      return NotImplemented
-
-    return self.literal_value == other.literal_value
-
-  def __hash__(self):
-    return hash(self.literal_value)
-
-  @property
-  def datum_value(self) -> H:
-    """Returns the value wrapped in the underlying Datum object"""
-    return self.literal_value.value
+  @staticmethod
+  def from_datum(datum: Datum[H]):
+    return DatumLiteral(datum.value)
 
 
 def is_datum_literal(obj, typ):
   """Return True if obj is a DatumLiteral holding a Datum of the given typ"""
-  return isinstance(obj, DatumLiteral) and isinstance(obj.datum_value, typ)
+  return isinstance(obj, DatumLiteral) and isinstance(obj.literal_value, typ)
 
 
 @unbox(DatumLiteral)
@@ -126,7 +111,7 @@ def unbox_datum_literal(typ, obj, c):
 @typeof_impl.register(Datum)
 def typeof_datum(val, c):
   """This is sufficient to use Datum within a numba.njit function"""
-  return DatumLiteral(val)
+  return DatumLiteral(val.value)
 
 
 # DatumLiteral is only implemented as a simple Literal and Dummy type
@@ -136,11 +121,14 @@ def typeof_datum(val, c):
 register_default(DatumLiteral)(OpaqueModel)
 
 # This ensures numba.literally(Datum(...)) produces a DatumLiteral
-types.Literal.ctor_map[Datum] = DatumLiteral
+types.Literal.ctor_map[Datum] = DatumLiteral.from_datum
 
 
-@overload_attribute(DatumLiteral, "value")
+@overload_attribute(DatumLiteral, "literal_value")
 def overload_datum_value(self):
+  if not isinstance(self, DatumLiteral):
+    raise TypingError(f"{self} is not a DatumLiteral")
+
   """Returns the literal_value of a DatumLiteral"""
-  value = self.datum_value
-  return lambda self: value
+  VALUE = self.literal_value
+  return lambda self: VALUE

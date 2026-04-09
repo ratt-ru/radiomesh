@@ -114,7 +114,7 @@ def wgrid_overload(
     raise TypingError(f"'flags' {flags} must be a Integer or Boolean Array")
 
   if not isinstance(wgrid_literal_params, DatumLiteral) or not isinstance(
-    (wgrid_params := wgrid_literal_params.datum_value), WGridderParameters
+    (wgrid_params := wgrid_literal_params.literal_value), WGridderParameters
   ):
     raise RequireLiteralValue(
       f"'wgrid_literal_params' {wgrid_literal_params} "

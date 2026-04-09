@@ -153,7 +153,7 @@ def es_kernel_positions(
       f"'fftshift_grid' {fftshift_grid} must be a BooleanLiteral"
     )
 
-  kernel = kernel_literal.datum_value
+  kernel = kernel_literal.literal_value
   SUPPORT = kernel.support
   N = grid_size.literal_value
   FFTSHIFT = fftshift_grid.literal_value
@@ -213,7 +213,7 @@ def eval_es_kernel(
   if not isinstance(pixel_start, types.Integer):
     raise TypingError(f"'pixel_start' ({pixel_start}) must be an integer")
 
-  kernel = kernel_literal.datum_value
+  kernel = kernel_literal.literal_value
 
   SUPPORT = kernel.support
   HALF_SUPPORT = kernel.half_support
