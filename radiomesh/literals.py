@@ -4,11 +4,7 @@ from typing import Any, Callable, Generic, Hashable, Tuple, TypeVar
 
 from numba.core import types
 from numba.core.datamodel.models import OpaqueModel, register_default
-from numba.extending import (
-  NativeValue,
-  typeof_impl,
-  unbox,
-)
+from numba.extending import NativeValue, overload_attribute, typeof_impl, unbox
 
 
 class Schema(tuple):
@@ -136,3 +132,9 @@ register_default(DatumLiteral)(OpaqueModel)
 
 # This ensures numba.literally(Datum(...)) produces a DatumLiteral
 types.Literal.ctor_map[Datum] = DatumLiteral
+
+
+@overload_attribute(DatumLiteral, "value")
+def overload_datum_value(self):
+  value = self.datum_value
+  return lambda self: value
