@@ -10,15 +10,15 @@ from radiomesh.literals import Datum, DatumLiteral, is_datum_literal
 
 
 def test_is_datum_literal():
-  assert is_datum_literal(DatumLiteral(Datum(4.0)), float)
+  assert is_datum_literal(DatumLiteral(4.0), float)
 
 
 def test_datum_literal_name():
-  assert str(DatumLiteral(Datum((2, 3, 4)))) == "DatumLiteral[tuple]((2, 3, 4))"
+  assert str(DatumLiteral((2, 3, 4))) == "DatumLiteral[tuple]((2, 3, 4))"
 
 
 def test_datum_literal_pickle():
-  datum_literal = DatumLiteral(Datum((2, 3, 4)))
+  datum_literal = DatumLiteral((2, 3, 4))
   assert pickle.loads(pickle.dumps(datum_literal)) == datum_literal
 
 
@@ -27,7 +27,7 @@ def add_datum_contents(typingctx, x, datum):
   if not isinstance(datum, DatumLiteral):
     raise RequireLiteralValue(f"{datum} is not a DatumLiteral")
 
-  VALUE = datum.literal_value.value
+  VALUE = datum.literal_value
   sig = x(x, datum)
 
   def codegen(context, builder, sig, args):
@@ -49,10 +49,8 @@ def f_overload(x, datum):
   if not isinstance(datum, DatumLiteral):
     raise RequireLiteralValue(f"{datum} is not DatumLiteral")
 
-  DATUM = datum.literal_value
-
   def impl(x, datum):
-    return add_datum_contents(x, DATUM)
+    return add_datum_contents(x, datum)
 
   return impl
 
@@ -75,6 +73,6 @@ def test_datum_literal_jit():
 
   @numba.njit
   def fn():
-    return datum.value
+    return datum.literal_value
 
   assert fn() == value
