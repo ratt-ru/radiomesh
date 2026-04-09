@@ -75,6 +75,6 @@ def test_datum_literal_jit():
 
   @numba.njit
   def fn():
-    return datum.literal_value
+    return datum.value
 
   assert fn() == value

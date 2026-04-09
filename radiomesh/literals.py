@@ -139,7 +139,7 @@ register_default(DatumLiteral)(OpaqueModel)
 types.Literal.ctor_map[Datum] = DatumLiteral
 
 
-@overload_attribute(DatumLiteral, "literal_value")
+@overload_attribute(DatumLiteral, "value")
 def overload_datum_value(self):
   """Returns the literal_value of a DatumLiteral"""
   value = self.datum_value
