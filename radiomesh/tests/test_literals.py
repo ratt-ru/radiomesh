@@ -6,7 +6,11 @@ from llvmlite import ir
 from numba.core.errors import RequireLiteralValue
 from numba.extending import intrinsic, overload
 
-from radiomesh.literals import Datum, DatumLiteral
+from radiomesh.literals import Datum, DatumLiteral, is_datum_literal
+
+
+def test_is_datum_literal():
+  assert is_datum_literal(DatumLiteral(Datum(4.0)), float)
 
 
 def test_datum_literal_name():
@@ -69,8 +73,8 @@ def test_datum_literal_jit():
   value = 4.0
   datum = Datum(value)
 
-  @numba.njit(nogil=True)
+  @numba.njit
   def fn():
-    return datum.value
+    return datum.literal_value
 
   assert fn() == value

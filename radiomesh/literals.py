@@ -111,6 +111,11 @@ class DatumLiteral(Generic[H], types.Literal, types.Dummy):
     return self.literal_value.value
 
 
+def is_datum_literal(obj, typ):
+  """Return True if obj is a DatumLiteral holding a Datum of the given typ"""
+  return isinstance(obj, DatumLiteral) and isinstance(obj.datum_value, typ)
+
+
 @unbox(DatumLiteral)
 def unbox_datum_literal(typ, obj, c):
   """Convert a Python DatumLiteral to a Numba representation
@@ -134,7 +139,8 @@ register_default(DatumLiteral)(OpaqueModel)
 types.Literal.ctor_map[Datum] = DatumLiteral
 
 
-@overload_attribute(DatumLiteral, "value")
+@overload_attribute(DatumLiteral, "literal_value")
 def overload_datum_value(self):
+  """Returns the literal_value of a DatumLiteral"""
   value = self.datum_value
   return lambda self: value
