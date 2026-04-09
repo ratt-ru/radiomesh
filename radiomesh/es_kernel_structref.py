@@ -8,6 +8,8 @@ from numba.core.types import StructRef
 from numba.experimental import structref
 from numba.extending import overload, overload_method, register_jitable
 
+from radiomesh.literals import Datum, is_datum_literal
+
 
 @register_jitable
 def generate_poly_coeffs(support, beta, e0):
@@ -104,6 +106,23 @@ class ESKernelStructRef(StructRef):
     return fields
     return tuple((n, types.unliteral(t)) for n, t in fields)
 
+  @property
+  def is_analytic(self):
+    return (
+      is_datum_literal(analytic := self.field_dict["analytic"], bool)
+      and analytic.literal_value is True
+    )
+
+  def literal_kernel_params(self):
+    if (
+      is_datum_literal(support := self.field_dict["support"], int)
+      and is_datum_literal(beta := self.field_dict["beta"], float)
+      and is_datum_literal(e0 := self.field_dict["e0"], float)
+    ):
+      return (support, beta, e0)
+
+    return False
+
 
 @numba.njit
 def es_kernel_ctor(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
@@ -113,9 +132,9 @@ def es_kernel_ctor(epsilon, oversampling, beta, e0, support, analytic, single, a
     beta,
     e0,
     support,
-    numba.literally(analytic),
-    numba.literally(single),
-    numba.literally(apply_w),
+    analytic,
+    single,
+    apply_w,
   )
 
 
@@ -132,7 +151,14 @@ class ESKernelProxy(structref.StructRefProxy):
     apply_w=True,
   ):
     return es_kernel_ctor(
-      epsilon, oversampling, beta, e0, support, analytic, single, apply_w
+      epsilon,
+      oversampling,
+      beta,
+      e0,
+      support,
+      Datum(analytic),
+      Datum(single),
+      Datum(apply_w),
     )
 
 
@@ -144,14 +170,14 @@ def overload_es_kernel(
   epsilon, oversampling, beta, e0, support, analytic, single, apply_w
 ):
   """Implement the ESKernel constructor"""
-  if not isinstance(analytic, types.BooleanLiteral):
-    raise RequireLiteralValue(f"analytic {analytic} must be a Boolean Literal")
+  if not is_datum_literal(analytic, bool):
+    raise RequireLiteralValue(f"analytic {analytic} must be a DatumLiteral[bool]")
 
-  if not isinstance(single, types.BooleanLiteral):
-    raise RequireLiteralValue(f"single {single} must be a Boolean Literal")
+  if not is_datum_literal(single, bool):
+    raise RequireLiteralValue(f"single {single} must be a DatumLiteral[bool]")
 
-  if not isinstance(apply_w, types.BooleanLiteral):
-    raise RequireLiteralValue(f"apply_w {apply_w} must be a Boolean Literal")
+  if not is_datum_literal(apply_w, bool):
+    raise RequireLiteralValue(f"apply_w {apply_w} must be a DatumLiteral[bool]")
 
   fields = [
     ("epsilon", epsilon),
@@ -169,6 +195,8 @@ def overload_es_kernel(
 
   state_type = ESKernelStructRef(fields)
 
+  APPLY_W = apply_w.literal_value
+
   def impl(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
     instance = structref.new(state_type)
     instance.epsilon = epsilon
@@ -180,10 +208,10 @@ def overload_es_kernel(
     instance.apply_w = apply_w
 
     if support <= 0:
-      ndim = 3.0 if apply_w else 2.0
-      support = int(math.ceil(math.log10(ndim * 1.0 / epsilon))) + 1
-
-    instance.support = support
+      ndim = 3.0 if APPLY_W else 2.0
+      instance.support = int(math.ceil(math.log10(ndim * 1.0 / epsilon))) + 1
+    else:
+      instance.support = support
 
     if not ANALYTIC:
       instance.coeffs = generate_poly_coeffs(support, beta, e0)
@@ -195,13 +223,59 @@ def overload_es_kernel(
 
 @overload_method(ESKernelStructRef, "evaluate")
 def overload_evaluate(self, x):
-  if self.field_dict["analytic"].literal_value is True:
-    # Define an analytic implementation
-    def impl(self, x):
-      pass
+  if (kernel_params := self.literal_kernel_params()) is not False:
+    SUPPORT, BETA, E0 = kernel_params
+    HALF_SUPPORT = SUPPORT / 2.0
+    BETAK = SUPPORT * BETA
+
+    if self.is_analytic:
+
+      def impl(self, x):
+        x = x / HALF_SUPPORT
+        if -1.0 < x < 1.0:
+          return math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
+        return 0.0
+    else:
+      COEFFS = (tuple(c.tolist()) for c in generate_poly_coeffs(SUPPORT, BETA, E0))
+      NCOEFFS = len(COEFFS)
+
+      def impl(self, x):
+        x = x / HALF_SUPPORT
+        if -1.0 < x < 1.0:
+          xrel = SUPPORT * 0.5 * (x + 1.0)
+          nth = min(int(xrel), SUPPORT - 1)
+          locx = ((xrel - nth) - 0.5) * 2.0
+          value = COEFFS[0][nth]
+          for i in numba.literal_unroll(range(1, NCOEFFS)):
+            value = value * locx + COEFFS[i][nth]
+          return value
+        return 0.0
+
   else:
-    # Define a polynomial implemenation
-    def impl(self, x):
-      pass
+    if self.is_analytic:
+
+      def impl(self, x):
+        half_support = self.support / 2.0
+        x = x / half_support
+        if -1.0 < x < 1.0:
+          return math.exp(
+            self.beta * self.support * (math.pow(1.0 - x * x, self.e0) - 1.0)
+          )
+        return 0.0
+
+    else:
+
+      def impl(self, x):
+        half_support = self.support / 2.0
+        x = x / half_support
+        if -1.0 < x < 1.0:
+          xrel = self.support * 0.5 * (x + 1.0)
+          nth = min(int(xrel), self.support - 1)
+          locx = ((xrel - nth) - 0.5) * 2.0
+          value = self.coeffs[0, nth]
+          for i in range(1, self.coeffs.shape[0]):
+            value = value * locx + self.coeffs[i, nth]
+          return value
+        return 0.0
 
   return impl
