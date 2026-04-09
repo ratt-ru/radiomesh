@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Simplify ``DatumLiteral`` (:pr:`61`)
 * Add ``is_datum_literal`` helper method (:pr:`60`)
 * Expose DatumLiteral's value in jitted code (:pr:`60`)
 * Add timestep, uvw_coordinate and frequency pytest fixtures (:pr:`59`)

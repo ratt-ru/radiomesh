@@ -61,7 +61,7 @@ def maybe_apply_jones(
 @overload(maybe_apply_jones, prefer_literal=True)
 def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
   if not isinstance(apply_jones_literal, DatumLiteral) or not isinstance(
-    (apply_jones := apply_jones_literal.datum_value), ApplyJones
+    (apply_jones := apply_jones_literal.literal_value), ApplyJones
   ):
     raise RequireLiteralValue(
       f"'apply_jones_literal' {apply_jones_literal} is not a DatumLiteral[ApplyJones]"
