@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Add timestep, uvw_coordinate and frequency pytest fixtures (:pr:`59`)
 * Move testing and dev optional dependencies into PEP 735 groups (:pr:`58`)
 * Support polynomial kernels (:pr:`57`)
 * Improve OS yield function calls (:pr:`56`)
