@@ -107,7 +107,7 @@ class ESKernelStructRef(StructRef):
 
 @numba.njit
 def es_kernel_ctor(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
-  return ESKernel(
+  return ESKernelProxy(
     epsilon,
     oversampling,
     beta,
@@ -119,7 +119,7 @@ def es_kernel_ctor(epsilon, oversampling, beta, e0, support, analytic, single, a
   )
 
 
-class ESKernel(structref.StructRefProxy):
+class ESKernelProxy(structref.StructRefProxy):
   def __new__(
     cls,
     epsilon: float = 2e-13,
@@ -136,10 +136,10 @@ class ESKernel(structref.StructRefProxy):
     )
 
 
-structref.define_boxing(ESKernelStructRef, ESKernel)
+structref.define_boxing(ESKernelStructRef, ESKernelProxy)
 
 
-@overload(ESKernel, prefer_literal=True)
+@overload(ESKernelProxy, prefer_literal=True)
 def overload_es_kernel(
   epsilon, oversampling, beta, e0, support, analytic, single, apply_w
 ):
@@ -195,4 +195,13 @@ def overload_es_kernel(
 
 @overload_method(ESKernelStructRef, "evaluate")
 def overload_evaluate(self, x):
-  return lambda self, x: self.beta * x
+  if self.field_dict["analytic"].literal_value is True:
+    # Define an analytic implementation
+    def impl(self, x):
+      pass
+  else:
+    # Define a polynomial implemenation
+    def impl(self, x):
+      pass
+
+  return impl

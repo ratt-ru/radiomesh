@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from radiomesh.es_kernel import generate_poly_coeffs_numpy
-from radiomesh.es_kernel_structref import ESKernel, generate_poly_coeffs
+from radiomesh.es_kernel_structref import ESKernelProxy, generate_poly_coeffs
 from radiomesh.tests.proc_utils import _init_numba_cache_debugging_with_capture
 
 
@@ -26,7 +26,7 @@ def test_generate_poly_coeffs_vs_numpy(support, beta, e0):
 
 
 def _caching_worker(x):
-  kernel = ESKernel(2e-13, 2.0, 2.3, 0.5, -1, False, False, True)
+  kernel = ESKernelProxy(2e-13, 2.0, 2.3, 0.5, -1, False, False, True)
 
   @numba.njit(cache=True, nogil=True)
   def fn(kernel, x):
