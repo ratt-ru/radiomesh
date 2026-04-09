@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Add ``is_datum_literal`` helper method (:pr:`60`)
+* Expose DatumLiteral's value in jitted code (:pr:`60`)
 * Add timestep, uvw_coordinate and frequency pytest fixtures (:pr:`59`)
 * Move testing and dev optional dependencies into PEP 735 groups (:pr:`58`)
 * Support polynomial kernels (:pr:`57`)
