@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Datums containing integers, booleans and strings are converted to numba {Integer,Boolean,String}Literal types (:pr:`62`)
+* Create a specific FloatDatumLiteral for embedding literal floats in jitted code (:pr:`62`)
 * Simplify ``DatumLiteral`` (:pr:`61`)
 * Add ``is_datum_literal`` helper method (:pr:`60`)
 * Expose DatumLiteral's value in jitted code (:pr:`60`)

@@ -59,7 +59,7 @@ def f_overload(x, datum):
 
 @numba.njit(cache=True)
 def f(x, value):
-  return f_impl(x, numba.literally(value))
+  return f_impl(x, value)
 
 
 def test_datum_literal():
@@ -106,3 +106,25 @@ def test_datum_caching(tmp_path):
   assert f"data saved to '{tmp_path}" in combined
   assert f"data loaded from '{tmp_path}" in combined
   assert f"index loaded from '{tmp_path}" in combined
+
+
+def test_datum_literal_casts():
+  """Tests that Datums wrapping types for which numba Literals
+  exist are converted into a {String,Integer,Boolean}Literal."""
+  str_datum = Datum("Hello")
+  assert numba.njit(lambda: str_datum + " World")() == "Hello World"
+
+  int_datum = Datum(1)
+  assert numba.njit(lambda: int_datum + 2)() == 3
+
+  # Without the bool(...) the raw bool value is dumped
+  # straight into the IR
+  bool_datum = Datum(False)
+  assert numba.njit(lambda: bool(bool_datum) or True)() is True
+
+
+def test_datum_literal_float_cast():
+  """Test that a Datum containing a float is converted to a
+  FloatDatumLiteral and then cast to a float"""
+  float_datum = Datum(4.0)
+  assert numba.njit(lambda a: a + float_datum)(2.0) == 6.0
