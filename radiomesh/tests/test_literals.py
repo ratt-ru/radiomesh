@@ -3,6 +3,7 @@ import pickle
 from functools import reduce
 
 import numba
+import pytest
 from llvmlite import ir
 from numba.core.errors import RequireLiteralValue
 from numba.extending import intrinsic, overload
@@ -103,28 +104,56 @@ def test_datum_caching(tmp_path):
     assert p.apply(_caching_worker, args=(0.5, datum)) == 6.5
 
   combined = stdout_f.read_text() + stderr_f.read_text()
-  assert f"data saved to '{tmp_path}" in combined
-  assert f"data loaded from '{tmp_path}" in combined
-  assert f"index loaded from '{tmp_path}" in combined
+  assert f"data saved to '{tmp_path}" in combined, combined
+  assert f"data loaded from '{tmp_path}" in combined, combined
+  assert f"index loaded from '{tmp_path}" in combined, combined
 
 
-def test_datum_literal_casts():
-  """Tests that Datums wrapping types for which numba Literals
-  exist are converted into a {String,Integer,Boolean}Literal."""
-  str_datum = Datum("Hello")
-  assert numba.njit(lambda: str_datum + " World")() == "Hello World"
+@pytest.mark.parametrize(
+  "value,constant,expected",
+  [
+    (3, 2, 5),
+    (3.0, 2.0, 5.0),
+    ("hello", " world", "hello world"),
+  ],
+)
+def test_datum_argument_vs_capture(value, constant, expected):
+  """Test that a Datum can be passed both as an argument and
+   as a captured closure variable to an njit function.
 
-  int_datum = Datum(1)
-  assert numba.njit(lambda: int_datum + 2)() == 3
+  When passed as a closure variable, the literal value is baked in at compile
+  time and unboxing is never invoked. Passing as an argument exercises the
+  unbox path, handles the literal derived from a Datum object."""
 
-  # Without the bool(...) the raw bool value is dumped
-  # straight into the IR
-  bool_datum = Datum(False)
-  assert numba.njit(lambda: bool(bool_datum) or True)() is True
+  datum = Datum(value)
+
+  @numba.njit
+  def passed_via_closure():
+    return datum + constant
+
+  @numba.njit
+  def passed_as_arg(x):
+    return x + constant
+
+  assert passed_as_arg(datum) == expected
+  assert passed_via_closure() == expected
 
 
-def test_datum_literal_float_cast():
-  """Test that a Datum containing a float is converted to a
-  FloatDatumLiteral and then cast to a float"""
-  float_datum = Datum(4.0)
-  assert numba.njit(lambda a: a + float_datum)(2.0) == 6.0
+def test_datum_argument_vs_capture_bool():
+  """Test that a Datum[bool] can be passed as an argument
+  and as a captured closure variable to an njit function."""
+
+  true = Datum(True)
+  false = Datum(False)
+
+  def _closure(x):
+    # bool(x) is needed here as BooleanDatumLiteral
+    # has an OpaqueModel with no is_true implementation
+    return numba.njit(lambda: bool(x) or not x)
+
+  @numba.njit
+  def passed_as_arg(x):
+    return x or not x
+
+  assert passed_as_arg(false) is _closure(false)() is True
+  assert passed_as_arg(true) is _closure(true)() is True
