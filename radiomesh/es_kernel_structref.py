@@ -101,45 +101,63 @@ def generate_poly_coeffs(support, beta, e0):
 class ESKernelStructRef(StructRef):
   """ESKernel StructRef"""
 
+  def __init__(self, fields):
+    super().__init__(fields)
+    literals = tuple(
+      sorted(
+        (name, typ.literal_value)
+        for name, typ in fields
+        if isinstance(typ, types.Literal)
+      )
+    )
+    self.name = f"{self.name}{literals}"
+    self._literal_values = dict(literals)
+
   def preprocess_fields(self, fields):
     """Disallow literal types in field definitions"""
-    return fields
     return tuple((n, types.unliteral(t)) for n, t in fields)
 
   @property
   def is_analytic(self):
-    return (
-      is_datum_literal(analytic := self.field_dict["analytic"], bool)
-      and analytic.literal_value is True
-    )
+    return self._literal_values.get("analytic", False) is True
 
   def literal_kernel_params(self):
     if (
-      is_datum_literal(support := self.field_dict["support"], int)
-      and is_datum_literal(beta := self.field_dict["beta"], float)
-      and is_datum_literal(e0 := self.field_dict["e0"], float)
+      isinstance(support := self._literal_values.get("support"), int)
+      and isinstance(beta := self._literal_values.get("beta"), float)
+      and isinstance(e0 := self._literal_values.get("e0"), float)
     ):
       return (support, beta, e0)
 
     return False
 
 
-@numba.njit
-def es_kernel_ctor(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
-  return ESKernelProxy(
-    epsilon,
-    oversampling,
-    beta,
-    e0,
-    support,
-    analytic,
-    single,
-    apply_w,
-  )
-
-
 class ESKernelProxy(structref.StructRefProxy):
   def __new__(
+    cls,
+    epsilon: float | Datum[float] = 2e-13,
+    oversampling: float | Datum[float] = 2.0,
+    beta: float | Datum[float] = 2.3,
+    e0: float | Datum[float] = 0.5,
+    support: int | Datum[int] = -1,
+    analytic: bool | Datum[bool] = True,
+    single: bool | Datum[bool] = True,
+    apply_w: bool | Datum[bool] = True,
+  ):
+    return structref.StructRefProxy.__new__(
+      cls,
+      epsilon,
+      oversampling,
+      beta,
+      e0,
+      support,
+      Datum(analytic) if not isinstance(analytic, Datum) else analytic,
+      Datum(single) if not isinstance(single, Datum) else single,
+      Datum(apply_w) if not isinstance(apply_w, Datum) else apply_w,
+    )
+
+  @classmethod
+  def fully_specified(
     cls,
     epsilon: float = 2e-13,
     oversampling: float = 2.0,
@@ -150,12 +168,12 @@ class ESKernelProxy(structref.StructRefProxy):
     single=True,
     apply_w=True,
   ):
-    return es_kernel_ctor(
-      epsilon,
-      oversampling,
-      beta,
-      e0,
-      support,
+    return ESKernelProxy(
+      Datum(epsilon),
+      Datum(oversampling),
+      Datum(beta),
+      Datum(e0),
+      Datum(support),
       Datum(analytic),
       Datum(single),
       Datum(apply_w),
@@ -236,7 +254,7 @@ def overload_evaluate(self, x):
           return math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
         return 0.0
     else:
-      COEFFS = (tuple(c.tolist()) for c in generate_poly_coeffs(SUPPORT, BETA, E0))
+      COEFFS = tuple(tuple(c.tolist()) for c in generate_poly_coeffs(SUPPORT, BETA, E0))
       NCOEFFS = len(COEFFS)
 
       def impl(self, x):
