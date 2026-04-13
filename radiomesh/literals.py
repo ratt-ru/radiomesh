@@ -5,6 +5,7 @@ from typing import Any, Callable, Generic, Hashable, Tuple, TypeVar
 from numba.core import types
 from numba.core.datamodel.models import OpaqueModel, register_default
 from numba.core.imputils import lower_cast
+from numba.cpython.unicode import make_string_from_constant
 from numba.extending import NativeValue, overload_attribute, typeof_impl, unbox
 
 
@@ -92,13 +93,40 @@ class DatumLiteral(Generic[H], types.Literal, types.Dummy):
     self._literal_init(value)
 
 
+class BooleanDatumLiteral(DatumLiteral):
+  pass
+
+
+class IntegerDatumLiteral(DatumLiteral):
+  pass
+
+
 class FloatDatumLiteral(DatumLiteral):
   pass
 
 
+class StringDatumLiteral(DatumLiteral):
+  pass
+
+
+@lower_cast(IntegerDatumLiteral, types.Integer)
+@lower_cast(BooleanDatumLiteral, types.Boolean)
 @lower_cast(FloatDatumLiteral, types.Float)
-def literal_float_to_number(context, builder, fromty, toty, val):
+@lower_cast(StringDatumLiteral, types.unicode_type)
+def datum_literal_to_constant(context, builder, fromty, toty, val):
+  if isinstance(fromty, StringDatumLiteral):
+    return make_string_from_constant(
+      context,
+      builder,
+      toty,
+      fromty.literal_value,
+    )
+
   lit = context.get_constant_generic(builder, fromty.literal_type, fromty.literal_value)
+
+  if isinstance(fromty, BooleanDatumLiteral):
+    return context.is_true(builder, fromty.literal_type, lit)
+
   return context.cast(builder, lit, fromty.literal_type, toty)
 
 
@@ -109,31 +137,34 @@ def is_datum_literal(obj, typ):
 
 @unbox(DatumLiteral)
 @unbox(FloatDatumLiteral)
+@unbox(IntegerDatumLiteral)
+@unbox(BooleanDatumLiteral)
+@unbox(StringDatumLiteral)
 def unbox_datum_literal(typ, obj, c):
-  """Convert a Python DatumLiteral to a Numba representation
-  Here we can just the Python DatumLiteral itself"""
+  """Convert a Python DatumLiteral to a Numba representation"""
   return NativeValue(c.context.get_dummy_value())
 
 
 def _from_datum(datum: Datum):
-  """Converts from a Datum to the appropriate numba Literal type
-  or to a DatumLiteral"""
-  if isinstance(value := datum.value, float):
+  """Converts from a Datum to a DatumLiteral"""
+  value = datum.value
+
+  if isinstance(value, float):
     return FloatDatumLiteral(value)
   elif isinstance(value, bool):
-    return types.BooleanLiteral(value)
+    return BooleanDatumLiteral(value)
   elif isinstance(value, int):
-    return types.IntegerLiteral(value)
+    return IntegerDatumLiteral(value)
   elif isinstance(value, str):
-    return types.StringLiteral(value)
-
-  return DatumLiteral(value)
+    return StringDatumLiteral(value)
+  else:
+    return DatumLiteral(value)
 
 
 @typeof_impl.register(Datum)
-def typeof_datum(val, c):
+def typeof_datum(datum: Datum, c):
   """This is sufficient to use Datum within a numba.njit function"""
-  return _from_datum(val)
+  return _from_datum(datum)
 
 
 # DatumLiteral is only implemented as a simple Literal and Dummy type
@@ -141,14 +172,20 @@ def typeof_datum(val, c):
 # It's functionality is minimally exposed within the numba layer so we
 # only register it with an OpaqueModel.
 register_default(DatumLiteral)(OpaqueModel)
+register_default(BooleanDatumLiteral)(OpaqueModel)
 register_default(FloatDatumLiteral)(OpaqueModel)
+register_default(IntegerDatumLiteral)(OpaqueModel)
+register_default(StringDatumLiteral)(OpaqueModel)
 
 # This ensures numba.literally(Datum(...)) produces a DatumLiteral
 types.Literal.ctor_map[Datum] = _from_datum
 
 
 @overload_attribute(DatumLiteral, "literal_value")
+@overload_attribute(BooleanDatumLiteral, "literal_value")
+@overload_attribute(IntegerDatumLiteral, "literal_value")
 @overload_attribute(FloatDatumLiteral, "literal_value")
+@overload_attribute(StringDatumLiteral, "literal_value")
 def overload_datum_value(self):
   """Returns the literal_value of a DatumLiteral"""
   if isinstance(self, DatumLiteral):
