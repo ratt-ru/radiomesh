@@ -254,7 +254,7 @@ def overload_evaluate(self, x):
           return math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
         return 0.0
     else:
-      COEFFS = tuple(tuple(c.tolist()) for c in generate_poly_coeffs(SUPPORT, BETA, E0))
+      COEFFS = tuple(tuple(c) for c in generate_poly_coeffs(SUPPORT, BETA, E0))
       NCOEFFS = len(COEFFS)
 
       def impl(self, x):
