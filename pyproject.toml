@@ -21,6 +21,7 @@ test = [
     "xarray-ms",
     "requests",
     "ducc0",
+    "sympy>=1.14.0",
 ]
 dev = [
     "pre-commit>=4.2.0",
