@@ -12,7 +12,6 @@ requires-python = ">=3.10, <3.14"
 dependencies = [
     "numpy>=2.0.0",
     "numba>=0.60.0",
-    "sympy>=1.9",
 ]
 
 [dependency-groups]
@@ -22,6 +21,7 @@ test = [
     "xarray-ms",
     "requests",
     "ducc0",
+    "sympy>=1.14.0",
     "pytest-benchmark>=5.2.3",
     "astropy>=6.1.7",
 ]
@@ -34,6 +34,11 @@ dev = [
 [project.scripts]
 
 radiomesh = "radiomesh.scripts.main:main"
+
+[project.optional-dependencies]
+scripts = [
+    "sympy>=1.14.0",
+]
 
 [build-system]
 requires = ["hatchling"]
