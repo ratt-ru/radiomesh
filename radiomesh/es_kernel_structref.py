@@ -297,3 +297,71 @@ def overload_evaluate(self, x):
         return 0.0
 
   return impl
+
+
+@overload_method(ESKernelStructRef, "evaluate_support")
+def overload_evaluate_support(self, grid, pixel_start, out):
+  if (kernel_params := self.literal_kernel_params()) is not False:
+    SUPPORT, BETA, E0 = kernel_params
+    HALF_SUPPORT = SUPPORT / 2.0
+    BETAK = SUPPORT * BETA
+
+    if self.is_analytic:
+
+      def impl(self, grid, pixel_start, out):
+        for offset in range(self.support):
+          x = (offset + pixel_start - grid) / HALF_SUPPORT
+          if -1.0 < x < 1.0:
+            out[offset] = math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
+          else:
+            out[offset] = 0.0
+    else:
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0)
+      NCOEFFS = len(COEFFS)
+
+      def impl(self, grid, pixel_start, out):
+        for offset in range(self.support):
+          x = (offset + pixel_start - grid) / HALF_SUPPORT
+          if -1.0 < x < 1.0:
+            xrel = SUPPORT * 0.5 * (x + 1.0)
+            nth = min(int(xrel), SUPPORT - 1)
+            locx = ((xrel - nth) - 0.5) * 2.0
+            value = COEFFS[0][nth]
+            for i in range(1, NCOEFFS):
+              value = value * locx + COEFFS[i][nth]
+            out[offset] = value
+          else:
+            out[offset] = 0.0
+
+  else:
+    if self.is_analytic:
+
+      def impl(self, grid, pixel_start, out):
+        half_support = self.support / 2.0
+        for offset in range(self.support):
+          x = (offset + pixel_start - grid) / half_support
+          if -1.0 < x < 1.0:
+            out[offset] = math.exp(
+              self.beta * self.support * (math.pow(1.0 - x * x, self.e0) - 1.0)
+            )
+          else:
+            out[offset] = 0.0
+
+    else:
+
+      def impl(self, grid, pixel_start, out):
+        half_support = self.support / 2.0
+        for offset in range(self.support):
+          x = (offset + pixel_start - grid) / half_support
+          if -1.0 < x < 1.0:
+            xrel = self.support * 0.5 * (x + 1.0)
+            nth = min(int(xrel), self.support - 1)
+            locx = ((xrel - nth) - 0.5) * 2.0
+            value = self.coeffs[0, nth]
+            for i in range(1, self.coeffs.shape[0]):
+              value = value * locx + self.coeffs[i, nth]
+            out[offset] = value
+          else:
+            out[offset] = 0.0
+
+  return impl
