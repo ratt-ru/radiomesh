@@ -213,3 +213,6 @@ class LiteralStructRef(StructRef):
 
   def preprocess_fields(self, fields):
     return tuple((n, types.unliteral(t)) for n, t in fields)
+
+  def get_literal(self, name: str, default: Any = None) -> Any:
+    return self._literal_values.get(name, default)
