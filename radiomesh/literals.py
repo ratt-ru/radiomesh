@@ -111,24 +111,21 @@ class StringDatumLiteral(DatumLiteral):
 
 
 @lower_cast(IntegerDatumLiteral, types.Integer)
-@lower_cast(BooleanDatumLiteral, types.Boolean)
 @lower_cast(FloatDatumLiteral, types.Float)
-@lower_cast(StringDatumLiteral, types.unicode_type)
-def datum_literal_to_constant(context, builder, fromty, toty, val):
-  if isinstance(fromty, StringDatumLiteral):
-    return make_string_from_constant(
-      context,
-      builder,
-      toty,
-      fromty.literal_value,
-    )
-
+def number_datum_literal_to_constant(context, builder, fromty, toty, val):
   lit = context.get_constant_generic(builder, fromty.literal_type, fromty.literal_value)
-
-  if isinstance(fromty, BooleanDatumLiteral):
-    return context.is_true(builder, fromty.literal_type, lit)
-
   return context.cast(builder, lit, fromty.literal_type, toty)
+
+
+@lower_cast(BooleanDatumLiteral, types.Boolean)
+def boolean_datum_literal_to_constant(context, builder, fromty, toty, val):
+  lit = context.get_constant_generic(builder, fromty.literal_type, fromty.literal_value)
+  return context.is_true(builder, fromty.literal_type, lit)
+
+
+@lower_cast(StringDatumLiteral, types.unicode_type)
+def string_datum_literal_to_constant(context, builder, fromty, toty, val):
+  return make_string_from_constant(context, builder, toty, fromty.literal_value)
 
 
 def is_datum_literal(obj, typ):
