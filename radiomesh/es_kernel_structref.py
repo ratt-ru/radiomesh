@@ -102,13 +102,13 @@ class ESKernelStructRef(LiteralStructRef):
 
   @property
   def is_analytic(self):
-    return self._literal_values.get("analytic", False) is True
+    return self.get_literal("analytic", False) is True
 
   def literal_kernel_params(self):
     if (
-      isinstance(support := self._literal_values.get("support"), int)
-      and isinstance(beta := self._literal_values.get("beta"), float)
-      and isinstance(e0 := self._literal_values.get("e0"), float)
+      isinstance(support := self.get_literal("support"), int)
+      and isinstance(beta := self.get_literal("beta"), float)
+      and isinstance(e0 := self.get_literal("e0"), float)
     ):
       return (support, beta, e0)
 
