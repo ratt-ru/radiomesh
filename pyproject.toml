@@ -22,6 +22,8 @@ test = [
     "requests",
     "ducc0",
     "sympy>=1.14.0",
+    "pytest-benchmark>=5.2.3",
+    "astropy>=6.1.7",
 ]
 dev = [
     "pre-commit>=4.2.0",
