@@ -143,7 +143,9 @@ def overload_gridding_metadata(uvw, frequencies, invert_u, invert_v, invert_w):
         raise NotImplementedError("Frequencies that do not increase monotically")
 
     obj = structref.new(struct_type)
+    obj = structref.new(struct_type)
     obj.uvw = uvw.copy()
+    obj.wavelengths = frequencies / LIGHTSPEED
     obj.u_max = 0.0
     obj.v_max = 0.0
     u_sign = uvw.dtype.type(-1.0 if invert_u else 1.0)
@@ -159,7 +161,6 @@ def overload_gridding_metadata(uvw, frequencies, invert_u, invert_v, invert_w):
         obj.u_max = max(obj.u_max, abs(obj.uvw[t, bl, 0]))
         obj.v_max = max(obj.u_max, abs(obj.uvw[t, bl, 1]))
 
-    obj.wavelengths = frequencies / LIGHTSPEED
     wavelength_max = obj.wavelengths.max()
     obj.u_max *= wavelength_max
     obj.v_max *= wavelength_max
