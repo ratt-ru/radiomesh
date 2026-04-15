@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Refactor Literal StructRef handling into base class (:pr:`66`)
 * Implement a StructRef ESKernel(:pr:`64`)
 * Move ``sympy`` into ``scripts`` and ``test`` dependency groups (:pr:`65`)
 * Provide distinct {Boolean,Float,Integer,String}DatumLiteral types (:pr:`63`)
