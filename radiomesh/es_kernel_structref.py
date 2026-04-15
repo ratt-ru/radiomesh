@@ -4,11 +4,10 @@ import numba
 import numpy as np
 from numba import types
 from numba.core.errors import RequireLiteralValue
-from numba.core.types import StructRef
 from numba.experimental import structref
 from numba.extending import overload, overload_method, register_jitable
 
-from radiomesh.literals import Datum, is_datum_literal
+from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
 
 
 @register_jitable
@@ -98,24 +97,8 @@ def generate_poly_coeffs(support, beta, e0):
 
 
 @structref.register
-class ESKernelStructRef(StructRef):
+class ESKernelStructRef(LiteralStructRef):
   """ESKernel StructRef"""
-
-  def __init__(self, fields):
-    super().__init__(fields)
-    literals = tuple(
-      sorted(
-        (name, typ.literal_value)
-        for name, typ in fields
-        if isinstance(typ, types.Literal)
-      )
-    )
-    self.name = f"{self.name}{literals}"
-    self._literal_values = dict(literals)
-
-  def preprocess_fields(self, fields):
-    """Disallow literal types in field definitions"""
-    return tuple((n, types.unliteral(t)) for n, t in fields)
 
   @property
   def is_analytic(self):

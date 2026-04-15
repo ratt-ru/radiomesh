@@ -5,6 +5,7 @@ from typing import Any, Callable, Generic, Hashable, Tuple, TypeVar
 from numba.core import types
 from numba.core.datamodel.models import OpaqueModel, register_default
 from numba.core.imputils import lower_cast
+from numba.core.types import StructRef
 from numba.cpython.unicode import make_string_from_constant
 from numba.extending import NativeValue, overload_attribute, typeof_impl, unbox
 
@@ -191,3 +192,24 @@ def overload_datum_value(self):
   if isinstance(self, DatumLiteral):
     VALUE = self.literal_value
     return lambda self: VALUE
+
+
+class LiteralStructRef(StructRef):
+  """StructRef base that extracts Literal-typed fields into a
+  ``_literal_values`` dict and mangles the type name to include them,
+  enabling compile-time specialisation on literal values."""
+
+  def __init__(self, fields):
+    super().__init__(fields)
+    literals = tuple(
+      sorted(
+        (name, typ.literal_value)
+        for name, typ in fields
+        if isinstance(typ, types.Literal)
+      )
+    )
+    self.name = f"{self.name}{literals}"
+    self._literal_values = dict(literals)
+
+  def preprocess_fields(self, fields):
+    return tuple((n, types.unliteral(t)) for n, t in fields)

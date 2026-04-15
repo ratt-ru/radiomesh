@@ -6,9 +6,10 @@ import numba
 import pytest
 from llvmlite import ir
 from numba.core.errors import RequireLiteralValue
-from numba.extending import intrinsic, overload
+from numba.experimental import structref
+from numba.extending import intrinsic, overload, overload_method
 
-from radiomesh.literals import Datum, DatumLiteral, is_datum_literal
+from radiomesh.literals import Datum, DatumLiteral, LiteralStructRef, is_datum_literal
 from radiomesh.tests.proc_utils import _init_numba_cache_debugging_with_capture
 
 
@@ -157,3 +158,112 @@ def test_datum_argument_vs_capture_bool():
 
   assert passed_as_arg(false) is _closure(false)() is True
   assert passed_as_arg(true) is _closure(true)() is True
+
+
+# ---------------------------------------------------------------------------
+# Minimal LiteralStructRef subclass for caching tests
+# ---------------------------------------------------------------------------
+
+
+@structref.register
+class SimpleLiteralStructRef(LiteralStructRef):
+  pass
+
+
+class SimpleLiteralProxy(structref.StructRefProxy):
+  def __new__(cls, value, flag):
+    return structref.StructRefProxy.__new__(cls, value, flag)
+
+
+structref.define_boxing(SimpleLiteralStructRef, SimpleLiteralProxy)
+
+
+@overload(SimpleLiteralProxy, prefer_literal=True)
+def overload_simple_literal(value, flag):
+  state_type = SimpleLiteralStructRef([("value", value), ("flag", flag)])
+
+  def impl(value, flag):
+    instance = structref.new(state_type)
+    instance.value = value
+    instance.flag = flag
+    return instance
+
+  return impl
+
+
+@overload_method(SimpleLiteralStructRef, "get_value")
+def overload_get_value(self):
+  def impl(self):
+    return self.value
+
+  return impl
+
+
+def _literal_structref_worker(x, flag):
+  proxy = SimpleLiteralProxy(x, flag)
+
+  @numba.njit(cache=True, nogil=True)
+  def fn(p):
+    return p.get_value()
+
+  return fn(proxy)
+
+
+def test_literal_structref_caching(tmp_path):
+  """LiteralStructRef-based types can be cached and reloaded."""
+  stdout_f = tmp_path / "stdout.txt"
+  stderr_f = tmp_path / "stderr.txt"
+  flag = Datum(True)
+
+  with mp.get_context("spawn").Pool(
+    1,
+    initializer=_init_numba_cache_debugging_with_capture,
+    initargs=(str(tmp_path), str(stdout_f), str(stderr_f)),
+  ) as p:
+    assert p.apply(_literal_structref_worker, args=(1.0, flag)) == 1.0
+    assert p.apply(_literal_structref_worker, args=(2.0, flag)) == 2.0
+
+  combined = stdout_f.read_text() + stderr_f.read_text()
+  assert combined.count(f"data saved to '{tmp_path}") == 1
+  assert combined.count(f"data loaded from '{tmp_path}") == 1
+  assert combined.count(f"index loaded from '{tmp_path}") == 1
+
+
+def test_literal_structref_caching_different_literals(tmp_path):
+  """Different literal values produce distinct cached specializations."""
+  stdout_f = tmp_path / "stdout.txt"
+  stderr_f = tmp_path / "stderr.txt"
+
+  with mp.get_context("spawn").Pool(
+    1,
+    initializer=_init_numba_cache_debugging_with_capture,
+    initargs=(str(tmp_path), str(stdout_f), str(stderr_f)),
+  ) as p:
+    assert p.apply(_literal_structref_worker, args=(Datum(1.0), Datum(True))) == 1.0
+    assert p.apply(_literal_structref_worker, args=(Datum(2.0), Datum(False))) == 2.0
+
+  combined = stdout_f.read_text() + stderr_f.read_text()
+  # Both specializations should have been saved (two "data saved" messages)
+  assert combined.count(f"data saved to '{tmp_path}") == 2
+  assert combined.count(f"index loaded from '{tmp_path}") == 2
+
+
+def test_literal_structref_caching_same_literals(tmp_path):
+  """Same literal value reuses the cache on the second call."""
+  stdout_f = tmp_path / "stdout.txt"
+  stderr_f = tmp_path / "stderr.txt"
+  flag = Datum(True)
+
+  with mp.get_context("spawn").Pool(
+    1,
+    initializer=_init_numba_cache_debugging_with_capture,
+    initargs=(str(tmp_path), str(stdout_f), str(stderr_f)),
+  ) as p:
+    assert p.apply(_literal_structref_worker, args=(1.0, flag)) == 1.0
+    assert p.apply(_literal_structref_worker, args=(3.0, flag)) == 3.0
+
+  combined = stdout_f.read_text() + stderr_f.read_text()
+  # First call saves, second call loads from cache
+  assert combined.count(f"data saved to '{tmp_path}") == 1
+  assert combined.count(f"data loaded from '{tmp_path}") == 1
+  assert combined.count(f"index loaded from '{tmp_path}") == 1
