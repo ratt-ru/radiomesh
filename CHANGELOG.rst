@@ -6,7 +6,7 @@ Changelog
 X.Y.Z (DD-MM-YYYY)
 ------------------
 * Refactor Literal StructRef handling into base class (:pr:`66`, :pr:`67`, :pr:`68`)
-* Implement a StructRef ESKernel(:pr:`64`, :pr:`69`, :pr:`70`)
+* Implement a StructRef ESKernel(:pr:`64`, :pr:`69`, :pr:`70`, :pr:`71`)
 * Move ``sympy`` into ``scripts`` and ``test`` dependency groups (:pr:`65`)
 * Provide distinct {Boolean,Float,Integer,String}DatumLiteral types (:pr:`63`)
 * Datums containing integers, booleans and strings are converted to numba {Integer,Boolean,String}Literal types (:pr:`62`)
