@@ -2,6 +2,7 @@ from numba import types
 from numba.core.types import StructRef
 from numba.experimental import structref
 from numba.extending import (
+  overload,
   overload_attribute,
   overload_classmethod,
   overload_method,
@@ -106,27 +107,34 @@ def overload_w_tile(self):
 
 
 @structref.register
-class Baselines(StructRef):
+class GriddingMetadataStructRef(StructRef):
   def preprocess_fields(self, fields):
     """Disallow literal types in field definitions"""
     return tuple((n, types.unliteral(t)) for n, t in fields)
 
 
-BaselinesType = Baselines(
-  fields=[
-    ("uvw", types.float64[:, :, :]),
-    ("wavelengths", types.float64[:]),
-    ("u_max", types.float64),
-    ("v_max", types.float64),
-  ]
-)
+class GriddingMetadata(structref.StructRefProxy):
+  def __new__(cls, uvw, frequencies, invert_u=False, invert_v=False, invert_w=False):
+    return structref.StructRefProxy.__new__(
+      cls, uvw, frequencies, invert_u, invert_v, invert_w
+    )
 
 
-@overload_classmethod(Baselines, "from_args")
-def overload_baseline_from_args(
-  cls, uvw, frequencies, invert_u=False, invert_v=False, invert_w=False
-):
-  def impl(cls, uvw, frequencies, invert_u=False, invert_v=False, invert_w=False):
+structref.define_boxing(GriddingMetadataStructRef, GriddingMetadata)
+
+
+@overload(GriddingMetadata)
+def overload_gridding_metadata(uvw, frequencies, invert_u, invert_v, invert_w):
+  struct_type = GriddingMetadataStructRef(
+    [
+      ("uvw", uvw),
+      ("wavelengths", frequencies),
+      ("u_max", uvw.dtype),
+      ("v_max", uvw.dtype),
+    ]
+  )
+
+  def impl(uvw, frequencies, invert_u, invert_v, invert_w):
     for i in range(frequencies.shape[0]):
       if frequencies[i] < 0.0:
         raise NotImplementedError("negative frequencies")
@@ -134,7 +142,7 @@ def overload_baseline_from_args(
       if i > 0 and frequencies[i - 1] >= frequencies[i]:
         raise NotImplementedError("Frequencies that do not increase monotically")
 
-    obj = structref.new(BaselinesType)
+    obj = structref.new(struct_type)
     obj.uvw = uvw.copy()
     obj.u_max = 0.0
     obj.v_max = 0.0
@@ -161,27 +169,27 @@ def overload_baseline_from_args(
   return impl
 
 
-@overload_method(Baselines, "max_uv")
+@overload_method(GriddingMetadataStructRef, "max_uv")
 def overload_max_uv(self):
   return lambda self: max(self.u_max, self.v_max)
 
 
-@overload_attribute(Baselines, "ntime")
+@overload_attribute(GriddingMetadataStructRef, "ntime")
 def overload_ntime(self):
   return lambda self: self.uvw.shape[0]
 
 
-@overload_attribute(Baselines, "nbl")
+@overload_attribute(GriddingMetadataStructRef, "nbl")
 def overload_nbl(self):
   return lambda self: self.uvw.shape[1]
 
 
-@overload_attribute(Baselines, "nchan")
+@overload_attribute(GriddingMetadataStructRef, "nchan")
 def overload_nchan(self):
   return lambda self: self.wavelengths.shape[0]
 
 
-@overload_method(Baselines, "effective_uvw")
+@overload_method(GriddingMetadataStructRef, "effective_uvw")
 def overload_effective_uvw(self, t, bl, ch):
   def impl(self, t, bl, ch):
     return (
@@ -193,12 +201,12 @@ def overload_effective_uvw(self, t, bl, ch):
   return impl
 
 
-@overload_method(Baselines, "effective_abs_w")
+@overload_method(GriddingMetadataStructRef, "effective_abs_w")
 def overload_effective_abs_w(self, t, bl, ch):
   return lambda self, t, bl, ch: abs(self.uvw[t, bl, 2] * self.wavelengths[ch])
 
 
-@overload_method(Baselines, "base_uvw")
+@overload_method(GriddingMetadataStructRef, "base_uvw")
 def overload_base_uvw(self, t, bl):
   def impl(self, t, bl):
     return self.uvw[t, bl, 0], self.uvw[t, bl, 1], self.uvw[t, bl, 2]
@@ -206,6 +214,6 @@ def overload_base_uvw(self, t, bl):
   return impl
 
 
-@overload_method(Baselines, "wavelength")
+@overload_method(GriddingMetadataStructRef, "wavelength")
 def overload_wavelength(self, ch):
   return lambda self, ch: self.wavelengths[ch]

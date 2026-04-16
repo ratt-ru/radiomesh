@@ -2,7 +2,7 @@ import numba
 import numpy as np
 import pytest
 
-from radiomesh.gridding_types import Baselines
+from radiomesh.gridding_types import GriddingMetadata
 
 # Synthetic Y-shaped antenna array near lat=-30°, lon=21°
 # (MeerKAT-like, ~1 km baselines).
@@ -95,11 +95,11 @@ def scan_data(visibilities, weight, flag, uvw, frequencies, gridding=False):
   ntime, nbl, _ = uvw.shape
   (nchan,) = frequencies.shape
 
-  baselines = Baselines.from_args(uvw, frequencies)
+  grid_meta = GriddingMetadata(uvw, frequencies, False, False, False)
 
-  ntime = baselines.ntime
-  nbl = baselines.nbl
-  nchan = baselines.nchan
+  ntime = grid_meta.ntime
+  nbl = grid_meta.nbl
+  nchan = grid_meta.nchan
 
   lmask = np.zeros((ntime, nbl, nchan), np.uint8)
   nvis = 0
@@ -113,7 +113,7 @@ def scan_data(visibilities, weight, flag, uvw, frequencies, gridding=False):
         if (v.real**2 + v.imag**2) * weight[t, bl, ch] * (flag[t, bl, ch]) != 0:
           lmask[t, bl, ch] = 1
           nvis += 1
-          w = baselines.effective_abs_w(t, bl, ch)
+          w = grid_meta.effective_abs_w(t, bl, ch)
           wmin_d = min(wmin_d, w)
           wmax_d = max(wmax_d, w)
 
