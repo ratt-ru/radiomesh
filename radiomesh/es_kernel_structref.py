@@ -301,7 +301,8 @@ def overload_evaluate_support(self, grid, pixel_start, out):
 
       def impl(self, grid, pixel_start, out):
         for offset in range(self.support):
-          if abs(x := (offset + pixel_start - grid) / HALF_SUPPORT) >= 1:
+          x = (offset + pixel_start - grid) / HALF_SUPPORT
+          if abs(x) >= 1:
             out[offset] = 0.0
           else:
             xrel = SUPPORT * 0.5 * (x + 1.0)
@@ -330,7 +331,8 @@ def overload_evaluate_support(self, grid, pixel_start, out):
       def impl(self, grid, pixel_start, out):
         half_support = self.support / 2.0
         for offset in range(self.support):
-          if abs(x := (offset + pixel_start - grid) / half_support) >= 1:
+          x = (offset + pixel_start - grid) / half_support
+          if abs(x) >= 1:
             out[offset] = 0.0
           else:
             xrel = self.support * 0.5 * (x + 1.0)
