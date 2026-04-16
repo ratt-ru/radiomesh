@@ -17,8 +17,9 @@ from radiomesh.es_kernel_structref import ESKernelProxy, generate_poly_coeffs
   ],
 )
 def test_generate_poly_coeffs_vs_numpy(support, beta, e0):
-  ref = np.array(generate_poly_coeffs_numpy(support, beta, e0))
-  result = generate_poly_coeffs(support, beta, e0)
+  degree = support + 3
+  ref = np.array(generate_poly_coeffs_numpy(support, beta, e0, degree))
+  result = generate_poly_coeffs(support, beta, e0, degree)
   np.testing.assert_allclose(result, ref, rtol=1e-5, atol=1e-12)
 
 
