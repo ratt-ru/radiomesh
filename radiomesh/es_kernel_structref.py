@@ -311,7 +311,7 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             value = COEFFS[0][nth]
             for i in range(1, NCOEFFS):
               value = value * locx + COEFFS[i][nth]
-            out[offset] = value * ((-1.0 < x) & (x < 1.0))
+            out[offset] = value
 
   else:
     if self.is_analytic:
@@ -341,6 +341,6 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             value = self.coeffs[0, nth]
             for i in range(1, self.coeffs.shape[0]):
               value = value * locx + self.coeffs[i, nth]
-            out[offset] = value * ((-1.0 < x) & (x < 1.0))
+            out[offset] = value
 
   return impl
