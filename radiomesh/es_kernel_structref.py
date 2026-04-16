@@ -301,14 +301,16 @@ def overload_evaluate_support(self, grid, pixel_start, out):
 
       def impl(self, grid, pixel_start, out):
         for offset in range(self.support):
-          x = (offset + pixel_start - grid) / HALF_SUPPORT
-          xrel = max(0.0, min(SUPPORT * 0.5 * (x + 1.0), SUPPORT - 1e-10))
-          nth = min(int(xrel), SUPPORT - 1)
-          locx = ((xrel - nth) - 0.5) * 2.0
-          value = COEFFS[0][nth]
-          for i in range(1, NCOEFFS):
-            value = value * locx + COEFFS[i][nth]
-          out[offset] = value * ((-1.0 < x) & (x < 1.0))
+          if abs(x := (offset + pixel_start - grid) / HALF_SUPPORT) >= 1:
+            out[offset] = 0.0
+          else:
+            xrel = SUPPORT * 0.5 * (x + 1.0)
+            nth = min(int(xrel), SUPPORT - 1)
+            locx = ((xrel - nth) - 0.5) * 2.0
+            value = COEFFS[0][nth]
+            for i in range(1, NCOEFFS):
+              value = value * locx + COEFFS[i][nth]
+            out[offset] = value * ((-1.0 < x) & (x < 1.0))
 
   else:
     if self.is_analytic:
@@ -328,13 +330,15 @@ def overload_evaluate_support(self, grid, pixel_start, out):
       def impl(self, grid, pixel_start, out):
         half_support = self.support / 2.0
         for offset in range(self.support):
-          x = (offset + pixel_start - grid) / half_support
-          xrel = max(0.0, min(self.support * 0.5 * (x + 1.0), self.support - 1e-10))
-          nth = min(int(xrel), self.support - 1)
-          locx = ((xrel - nth) - 0.5) * 2.0
-          value = self.coeffs[0, nth]
-          for i in range(1, self.coeffs.shape[0]):
-            value = value * locx + self.coeffs[i, nth]
-          out[offset] = value * ((-1.0 < x) & (x < 1.0))
+          if abs(x := (offset + pixel_start - grid) / half_support) >= 1:
+            out[offset] = 0.0
+          else:
+            xrel = self.support * 0.5 * (x + 1.0)
+            nth = min(int(xrel), self.support - 1)
+            locx = ((xrel - nth) - 0.5) * 2.0
+            value = self.coeffs[0, nth]
+            for i in range(1, self.coeffs.shape[0]):
+              value = value * locx + self.coeffs[i, nth]
+            out[offset] = value * ((-1.0 < x) & (x < 1.0))
 
   return impl
