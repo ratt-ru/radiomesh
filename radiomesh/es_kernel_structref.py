@@ -233,24 +233,23 @@ def overload_evaluate(self, x):
 
       def impl(self, x):
         x = x / HALF_SUPPORT
-        if -1.0 < x < 1.0:
-          return math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
-        return 0.0
+        tmp = 1.0 - x * x
+        safe_tmp = max(tmp, 0.0)
+        return math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
+
     else:
       COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
       NCOEFFS = len(COEFFS)
 
       def impl(self, x):
         x = x / HALF_SUPPORT
-        if -1.0 < x < 1.0:
-          xrel = SUPPORT * 0.5 * (x + 1.0)
-          nth = min(int(xrel), SUPPORT - 1)
-          locx = ((xrel - nth) - 0.5) * 2.0
-          value = COEFFS[0][nth]
-          for i in numba.literal_unroll(range(1, NCOEFFS)):
-            value = value * locx + COEFFS[i][nth]
-          return value
-        return 0.0
+        xrel = max(0.0, min(SUPPORT * 0.5 * (x + 1.0), SUPPORT - 1e-10))
+        nth = min(int(xrel), SUPPORT - 1)
+        locx = ((xrel - nth) - 0.5) * 2.0
+        value = COEFFS[0][nth]
+        for i in numba.literal_unroll(range(1, NCOEFFS)):
+          value = value * locx + COEFFS[i][nth]
+        return value * ((-1.0 < x) & (x < 1.0))
 
   else:
     if self.is_analytic:
@@ -258,26 +257,24 @@ def overload_evaluate(self, x):
       def impl(self, x):
         half_support = self.support / 2.0
         x = x / half_support
-        if -1.0 < x < 1.0:
-          return math.exp(
-            self.beta * self.support * (math.pow(1.0 - x * x, self.e0) - 1.0)
-          )
-        return 0.0
+        tmp = 1.0 - x * x
+        safe_tmp = max(tmp, 0.0)
+        return math.exp(
+          self.beta * self.support * (math.pow(safe_tmp, self.e0) - 1.0)
+        ) * (tmp > 0.0)
 
     else:
 
       def impl(self, x):
         half_support = self.support / 2.0
         x = x / half_support
-        if -1.0 < x < 1.0:
-          xrel = self.support * 0.5 * (x + 1.0)
-          nth = min(int(xrel), self.support - 1)
-          locx = ((xrel - nth) - 0.5) * 2.0
-          value = self.coeffs[0, nth]
-          for i in range(1, self.coeffs.shape[0]):
-            value = value * locx + self.coeffs[i, nth]
-          return value
-        return 0.0
+        xrel = max(0.0, min(self.support * 0.5 * (x + 1.0), self.support - 1e-10))
+        nth = min(int(xrel), self.support - 1)
+        locx = ((xrel - nth) - 0.5) * 2.0
+        value = self.coeffs[0, nth]
+        for i in range(1, self.coeffs.shape[0]):
+          value = value * locx + self.coeffs[i, nth]
+        return value * ((-1.0 < x) & (x < 1.0))
 
   return impl
 
@@ -294,10 +291,10 @@ def overload_evaluate_support(self, grid, pixel_start, out):
       def impl(self, grid, pixel_start, out):
         for offset in range(self.support):
           x = (offset + pixel_start - grid) / HALF_SUPPORT
-          if -1.0 < x < 1.0:
-            out[offset] = math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
-          else:
-            out[offset] = 0.0
+          tmp = 1.0 - x * x
+          safe_tmp = max(tmp, 0.0)
+          out[offset] = math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
+
     else:
       COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
       NCOEFFS = len(COEFFS)
@@ -305,16 +302,13 @@ def overload_evaluate_support(self, grid, pixel_start, out):
       def impl(self, grid, pixel_start, out):
         for offset in range(self.support):
           x = (offset + pixel_start - grid) / HALF_SUPPORT
-          if -1.0 < x < 1.0:
-            xrel = SUPPORT * 0.5 * (x + 1.0)
-            nth = min(int(xrel), SUPPORT - 1)
-            locx = ((xrel - nth) - 0.5) * 2.0
-            value = COEFFS[0][nth]
-            for i in range(1, NCOEFFS):
-              value = value * locx + COEFFS[i][nth]
-            out[offset] = value
-          else:
-            out[offset] = 0.0
+          xrel = max(0.0, min(SUPPORT * 0.5 * (x + 1.0), SUPPORT - 1e-10))
+          nth = min(int(xrel), SUPPORT - 1)
+          locx = ((xrel - nth) - 0.5) * 2.0
+          value = COEFFS[0][nth]
+          for i in range(1, NCOEFFS):
+            value = value * locx + COEFFS[i][nth]
+          out[offset] = value * ((-1.0 < x) & (x < 1.0))
 
   else:
     if self.is_analytic:
@@ -323,12 +317,11 @@ def overload_evaluate_support(self, grid, pixel_start, out):
         half_support = self.support / 2.0
         for offset in range(self.support):
           x = (offset + pixel_start - grid) / half_support
-          if -1.0 < x < 1.0:
-            out[offset] = math.exp(
-              self.beta * self.support * (math.pow(1.0 - x * x, self.e0) - 1.0)
-            )
-          else:
-            out[offset] = 0.0
+          tmp = 1.0 - x * x
+          safe_tmp = max(tmp, 0.0)
+          out[offset] = math.exp(
+            self.beta * self.support * (math.pow(safe_tmp, self.e0) - 1.0)
+          ) * (tmp > 0.0)
 
     else:
 
@@ -336,15 +329,12 @@ def overload_evaluate_support(self, grid, pixel_start, out):
         half_support = self.support / 2.0
         for offset in range(self.support):
           x = (offset + pixel_start - grid) / half_support
-          if -1.0 < x < 1.0:
-            xrel = self.support * 0.5 * (x + 1.0)
-            nth = min(int(xrel), self.support - 1)
-            locx = ((xrel - nth) - 0.5) * 2.0
-            value = self.coeffs[0, nth]
-            for i in range(1, self.coeffs.shape[0]):
-              value = value * locx + self.coeffs[i, nth]
-            out[offset] = value
-          else:
-            out[offset] = 0.0
+          xrel = max(0.0, min(self.support * 0.5 * (x + 1.0), self.support - 1e-10))
+          nth = min(int(xrel), self.support - 1)
+          locx = ((xrel - nth) - 0.5) * 2.0
+          value = self.coeffs[0, nth]
+          for i in range(1, self.coeffs.shape[0]):
+            value = value * locx + self.coeffs[i, nth]
+          out[offset] = value * ((-1.0 < x) & (x < 1.0))
 
   return impl
