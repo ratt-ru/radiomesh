@@ -11,47 +11,47 @@ from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
 
 
 @register_jitable
-def generate_poly_coeffs(support, beta, e0):
+def generate_poly_coeffs(support, beta, e0, degree):
   """Generate polynomial approximation coefficients for the ES kernel.
 
   The ES kernel ``exp(beta * support * ((1 - v^2)^e0 - 1))`` is approximated on
-  ``[-1, 1]`` by ``support`` degree-``D`` polynomials, one per sub-interval.
+  ``[-1, 1]`` by ``support`` ``degree`` polynomials, one per sub-interval.
 
   Args:
     support: kernel support.
     beta: beta parameter.
     e0: exponent parameter.
+    degree: polynomial degree.
 
   Returns:
-    Array of shape ``(D+1, support)`` where ``D = support + 3``.
-    ``coeffs[j, i]`` is the coefficient of ``x^(D-j)`` for sub-interval ``i``
+    Array of shape ``(degree+1, support)``.
+    ``coeffs[j, i]`` is the coefficient of ``x^(degree-j)`` for sub-interval ``i``
     (Horner order: index 0 is the leading / highest-power coefficient).
   """
-  D = support + 3
   betak = beta * support
 
   # Chebyshev nodes on [-1, 1]
-  i_arr = np.arange(D + 1, dtype=np.float64)
-  chebroot = np.cos((2.0 * i_arr + 1.0) * math.pi / (2.0 * D + 2.0))
+  i_arr = np.arange(degree + 1, dtype=np.float64)
+  chebroot = np.cos((2.0 * i_arr + 1.0) * math.pi / (2.0 * degree + 2.0))
 
   # coeff[j, i] in output order (j = Horner step, i = sub-interval)
-  coeff = np.zeros((D + 1, support), dtype=np.float64)
+  coeff = np.zeros((degree + 1, support), dtype=np.float64)
 
   # Chebyshev-to-monomial conversion: C[j, k] = coeff of x^k in T_j(x)
-  C = np.zeros((D + 1, D + 1), dtype=np.float64)
+  C = np.zeros((degree + 1, degree + 1), dtype=np.float64)
   C[0, 0] = 1.0
-  if D >= 1:
+  if degree >= 1:
     C[1, 1] = 1.0
-  for j in range(2, D + 1):
+  for j in range(2, degree + 1):
     C[j, 0] = -C[j - 2, 0]
     for k in range(1, j + 1):
       C[j, k] = 2.0 * C[j - 1, k - 1] - C[j - 2, k]
 
   # Precompute cosine matrix for DCT: cos_mat[j, k] = cos(j*(2k+1)*pi/(2D+2))
-  cos_mat = np.empty((D + 1, D + 1), dtype=np.float64)
-  for j in range(D + 1):
-    for k in range(D + 1):
-      cos_mat[j, k] = math.cos(j * (2.0 * k + 1.0) * math.pi / (2.0 * D + 2.0))
+  cos_mat = np.empty((degree + 1, degree + 1), dtype=np.float64)
+  for j in range(degree + 1):
+    for k in range(degree + 1):
+      cos_mat[j, k] = math.cos(j * (2.0 * k + 1.0) * math.pi / (2.0 * degree + 2.0))
 
   for i in range(support):
     left = -1.0 + 2.0 * i / support
@@ -59,8 +59,8 @@ def generate_poly_coeffs(support, beta, e0):
 
     # Function values at Chebyshev nodes mapped to [left, right]
     nodes = chebroot * (right - left) * 0.5 + (right + left) * 0.5
-    y = np.empty(D + 1, dtype=np.float64)
-    for j in range(D + 1):
+    y = np.empty(degree + 1, dtype=np.float64)
+    for j in range(degree + 1):
       v = nodes[j]
       tmp = (1.0 - v) * (1.0 + v)
       if tmp < 0.0:
@@ -68,30 +68,30 @@ def generate_poly_coeffs(support, beta, e0):
       else:
         y[j] = math.exp(betak * (tmp**e0 - 1.0))
 
-    avg = np.sum(y) / (D + 1)
+    avg = np.sum(y) / (degree + 1)
     y -= avg
 
     # Chebyshev coefficients via DCT-I-like sum
-    lcf = np.empty(D + 1, dtype=np.float64)
-    for j in range(D + 1):
+    lcf = np.empty(degree + 1, dtype=np.float64)
+    for j in range(degree + 1):
       s = 0.0
-      for k in range(D + 1):
+      for k in range(degree + 1):
         s += cos_mat[j, k] * y[k]
-      lcf[j] = (2.0 / (D + 1)) * s
+      lcf[j] = (2.0 / (degree + 1)) * s
     lcf[0] *= 0.5
 
     # lcf2[k] = coefficient of x^k in the combined polynomial
-    lcf2 = np.empty(D + 1, dtype=np.float64)
-    for k in range(D + 1):
+    lcf2 = np.empty(degree + 1, dtype=np.float64)
+    for k in range(degree + 1):
       s = 0.0
-      for j in range(D + 1):
+      for j in range(degree + 1):
         s += C[j, k] * lcf[j]
       lcf2[k] = s
     lcf2[0] += avg
 
     # Store in Horner order: coeff[j, i] = lcf2[D-j]
-    for j in range(D + 1):
-      coeff[j, i] = lcf2[D - j]
+    for j in range(degree + 1):
+      coeff[j, i] = lcf2[degree - j]
 
   return coeff
 
@@ -215,7 +215,7 @@ def overload_es_kernel(
       instance.support = support
 
     if not ANALYTIC:
-      instance.coeffs = generate_poly_coeffs(support, beta, e0)
+      instance.coeffs = generate_poly_coeffs(support, beta, e0, support + 3)
 
     return instance
 
@@ -237,7 +237,7 @@ def overload_evaluate(self, x):
           return math.exp(BETAK * (math.pow(1.0 - x * x, E0) - 1.0))
         return 0.0
     else:
-      COEFFS = tuple(tuple(c) for c in generate_poly_coeffs(SUPPORT, BETA, E0))
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
       NCOEFFS = len(COEFFS)
 
       def impl(self, x):
@@ -299,7 +299,7 @@ def overload_evaluate_support(self, grid, pixel_start, out):
           else:
             out[offset] = 0.0
     else:
-      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0)
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
       NCOEFFS = len(COEFFS)
 
       def impl(self, grid, pixel_start, out):

@@ -66,7 +66,7 @@ def select_kernel_params(
 
 
 def generate_poly_coeffs_numpy(
-  support: int, beta: float, e0: float
+  support: int, beta: float, e0: float, degree: int | None = None
 ) -> tuple[tuple[float, ...], ...]:
   """Compute polynomial coefficients of an ES kernel with
    the given parameters.
@@ -81,13 +81,14 @@ def generate_poly_coeffs_numpy(
     support: kernel support (number of sub-intervals).
     beta: beta parameter.
     e0: exponent parameter.
+    degree: polynomial degree ``D``. Defaults to ``support + 3``.
 
   Returns:
-    Nested tuple of shape ``(D+1) x support`` where ``D = support + 3``.
+    Nested tuple of shape ``(D+1) x support``.
     ``coeffs[j][i]`` is the coefficient of ``x^(support-j)`` for sub-interval ``i``
     (Horner order: index 0 is the leading / highest-power coefficient).
   """
-  D = support + 3
+  D = degree if degree is not None else support + 3
   betak = beta * support
 
   def es_kernel(v: np.ndarray) -> np.ndarray:
