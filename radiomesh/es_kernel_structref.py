@@ -243,13 +243,16 @@ def overload_evaluate(self, x):
 
       def impl(self, x):
         x = x / HALF_SUPPORT
-        xrel = max(0.0, min(SUPPORT * 0.5 * (x + 1.0), SUPPORT - 1e-10))
+        if abs(x) >= 1:
+          return 0.0
+
+        xrel = SUPPORT * 0.5 * (x + 1.0)
         nth = min(int(xrel), SUPPORT - 1)
         locx = ((xrel - nth) - 0.5) * 2.0
         value = COEFFS[0][nth]
         for i in numba.literal_unroll(range(1, NCOEFFS)):
           value = value * locx + COEFFS[i][nth]
-        return value * ((-1.0 < x) & (x < 1.0))
+        return value
 
   else:
     if self.is_analytic:
@@ -268,13 +271,15 @@ def overload_evaluate(self, x):
       def impl(self, x):
         half_support = self.support / 2.0
         x = x / half_support
-        xrel = max(0.0, min(self.support * 0.5 * (x + 1.0), self.support - 1e-10))
+        if abs(x) >= 1:
+          return 0.0
+        xrel = self.support * 0.5 * (x + 1.0)
         nth = min(int(xrel), self.support - 1)
         locx = ((xrel - nth) - 0.5) * 2.0
         value = self.coeffs[0, nth]
         for i in range(1, self.coeffs.shape[0]):
           value = value * locx + self.coeffs[i, nth]
-        return value * ((-1.0 < x) & (x < 1.0))
+        return value
 
   return impl
 
