@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Relax literal requirements in ESKernelStructRef (:pr:`73`)
 * Refactor Literal StructRef handling into base class (:pr:`66`, :pr:`67`, :pr:`68`)
 * Implement a StructRef ESKernel(:pr:`64`, :pr:`69`, :pr:`70`, :pr:`71`, :pr:`72`)
 * Move ``sympy`` into ``scripts`` and ``test`` dependency groups (:pr:`65`)
