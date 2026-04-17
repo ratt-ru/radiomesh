@@ -226,12 +226,20 @@ def overload_evaluate(self, x):
     BETAK = SUPPORT * BETA
 
     if self.get_literal("analytic") is True:
+      if E0 == 0.5:
 
-      def impl(self, x):
-        x = x / HALF_SUPPORT
-        tmp = 1.0 - x * x
-        safe_tmp = max(tmp, 0.0)
-        return math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
+        def impl(self, x):
+          x = x / HALF_SUPPORT
+          tmp = 1.0 - x * x
+          safe_tmp = max(tmp, 0.0)
+          return math.exp(BETAK * (math.sqrt(safe_tmp) - 1.0)) * (tmp > 0.0)
+      else:
+
+        def impl(self, x):
+          x = x / HALF_SUPPORT
+          tmp = 1.0 - x * x
+          safe_tmp = max(tmp, 0.0)
+          return math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
 
     else:
       COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
@@ -288,13 +296,23 @@ def overload_evaluate_support(self, grid, pixel_start, out):
     BETAK = SUPPORT * BETA
 
     if self.get_literal("analytic") is True:
+      if E0 == 0.5:
 
-      def impl(self, grid, pixel_start, out):
-        for offset in range(self.support):
-          x = (offset + pixel_start - grid) / HALF_SUPPORT
-          tmp = 1.0 - x * x
-          safe_tmp = max(tmp, 0.0)
-          out[offset] = math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
+        def impl(self, grid, pixel_start, out):
+          for offset in range(self.support):
+            x = (offset + pixel_start - grid) / HALF_SUPPORT
+            tmp = 1.0 - x * x
+            safe_tmp = max(tmp, 0.0)
+            out[offset] = math.exp(BETAK * (math.sqrt(safe_tmp) - 1.0)) * (tmp > 0.0)
+
+      else:
+
+        def impl(self, grid, pixel_start, out):
+          for offset in range(self.support):
+            x = (offset + pixel_start - grid) / HALF_SUPPORT
+            tmp = 1.0 - x * x
+            safe_tmp = max(tmp, 0.0)
+            out[offset] = math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
 
     else:
       COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
