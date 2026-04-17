@@ -7,6 +7,7 @@ from numba.experimental import structref
 from numba.extending import overload, overload_method, register_jitable
 
 from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
+from radiomesh.numba_utils import make_structref_property
 
 
 @register_jitable
@@ -133,6 +134,15 @@ class ESKernelProxy(structref.StructRefProxy):
       single,
       apply_w,
     )
+
+  epsilon = make_structref_property("epsilon")
+  oversampling = make_structref_property("oversampling")
+  beta = make_structref_property("beta")
+  e0 = make_structref_property("e0")
+  support = make_structref_property("support")
+  analytic = make_structref_property("analytic")
+  single = make_structref_property("single")
+  apply_w = make_structref_property("apply_w")
 
   @classmethod
   def fully_specified(
