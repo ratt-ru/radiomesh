@@ -3,7 +3,6 @@ import math
 import numba
 import numpy as np
 from numba import types
-from numba.core.errors import RequireLiteralValue
 from numba.experimental import structref
 from numba.extending import overload, overload_method, register_jitable
 
@@ -100,10 +99,6 @@ def generate_poly_coeffs(support, beta, e0, degree):
 class ESKernelStructRef(LiteralStructRef):
   """ESKernel StructRef"""
 
-  @property
-  def is_analytic(self):
-    return self.get_literal("analytic", False) is True
-
   def literal_kernel_params(self):
     if (
       isinstance(support := self.get_literal("support"), int)
@@ -135,8 +130,8 @@ class ESKernelProxy(structref.StructRefProxy):
       e0,
       support,
       Datum(analytic) if not isinstance(analytic, Datum) else analytic,
-      Datum(single) if not isinstance(single, Datum) else single,
-      Datum(apply_w) if not isinstance(apply_w, Datum) else apply_w,
+      single,
+      apply_w,
     )
 
   @classmethod
@@ -171,14 +166,7 @@ def overload_es_kernel(
   epsilon, oversampling, beta, e0, support, analytic, single, apply_w
 ):
   """Implement the ESKernel constructor"""
-  if not is_datum_literal(analytic, bool):
-    raise RequireLiteralValue(f"analytic {analytic} must be a DatumLiteral[bool]")
-
-  if not is_datum_literal(single, bool):
-    raise RequireLiteralValue(f"single {single} must be a DatumLiteral[bool]")
-
-  if not is_datum_literal(apply_w, bool):
-    raise RequireLiteralValue(f"apply_w {apply_w} must be a DatumLiteral[bool]")
+  ANALYTIC = is_datum_literal(analytic, bool) and analytic.literal_value is True
 
   fields = [
     ("epsilon", epsilon),
@@ -191,12 +179,10 @@ def overload_es_kernel(
     ("apply_w", apply_w),
   ]
 
-  if (ANALYTIC := analytic.literal_value) is False:
+  if not ANALYTIC:
     fields.append(("coeffs", types.float64[:, :]))
 
   state_type = ESKernelStructRef(fields)
-
-  APPLY_W = apply_w.literal_value
 
   def impl(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
     instance = structref.new(state_type)
@@ -209,7 +195,7 @@ def overload_es_kernel(
     instance.apply_w = apply_w
 
     if support <= 0:
-      ndim = 3.0 if APPLY_W else 2.0
+      ndim = 3.0 if apply_w else 2.0
       instance.support = int(math.ceil(math.log10(ndim * 1.0 / epsilon))) + 1
     else:
       instance.support = support
@@ -229,7 +215,7 @@ def overload_evaluate(self, x):
     HALF_SUPPORT = SUPPORT / 2.0
     BETAK = SUPPORT * BETA
 
-    if self.is_analytic:
+    if self.get_literal("analytic") is True:
 
       def impl(self, x):
         x = x / HALF_SUPPORT
@@ -255,7 +241,7 @@ def overload_evaluate(self, x):
         return value
 
   else:
-    if self.is_analytic:
+    if self.get_literal("analytic") is True:
 
       def impl(self, x):
         half_support = self.support / 2.0
@@ -291,7 +277,7 @@ def overload_evaluate_support(self, grid, pixel_start, out):
     HALF_SUPPORT = SUPPORT / 2.0
     BETAK = SUPPORT * BETA
 
-    if self.is_analytic:
+    if self.get_literal("analytic") is True:
 
       def impl(self, grid, pixel_start, out):
         for offset in range(self.support):
@@ -319,7 +305,7 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             out[offset] = value
 
   else:
-    if self.is_analytic:
+    if self.get_literal("analytic") is True:
 
       def impl(self, grid, pixel_start, out):
         half_support = self.support / 2.0
