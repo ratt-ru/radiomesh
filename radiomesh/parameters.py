@@ -175,12 +175,17 @@ class WGridderParametersStructRef(StructRef):
 
 
 class WGridderParameters(structref.StructRefProxy):
-  def __new__(cls, nu, nv, kernel, nm1min, nm1max, nshift):
-    return structref.StructRefProxy.__new__(cls, nu, nv, kernel, nm1min, nm1max, nshift)
+  def __new__(cls, nu, nv, kernel, wmin, wmax, nw, nm1min, nm1max, nshift):
+    return structref.StructRefProxy.__new__(
+      cls, nu, nv, kernel, wmin, wmax, nw, nm1min, nm1max, nshift
+    )
 
   nu = make_structref_property("nu")
   nv = make_structref_property("nv")
   kernel = make_structref_property("kernel")
+  wmin = make_structref_property("wmin")
+  wmax = make_structref_property("wmax")
+  dw = make_structref_property("nw")
   nm1min = make_structref_property("nm1min")
   nm1max = make_structref_property("nm1max")
   nshift = make_structref_property("nshift")
@@ -189,7 +194,7 @@ class WGridderParameters(structref.StructRefProxy):
 structref.define_proxy(
   WGridderParameters,
   WGridderParametersStructRef,
-  ["nu", "nv", "kernel", "nm1min", "nm1max", "nshift"],
+  ["nu", "nv", "kernel", "wmin", "wmax", "nw", "nm1min", "nm1max", "nshift"],
 )
 
 # Reference FFT size and cost
@@ -294,9 +299,11 @@ def estimate_gridding_parameters(
 
     if apply_w:
       dw = 0.5 / oversampling / max(abs(nm1max + nshift), abs(nm1min + nshift))
-      nplanes = int((wmax_d - wmin_d) / dw + support)
-      fftcost *= nplanes
+      nw = int((wmax_d - wmin_d) / dw + support)
+      fftcost *= nw
       gridcost *= support
+    else:
+      nw = 1
 
     gridcost /= nthreads
     fftcost /= sigmoid(nthreads, MAX_FFT_SCALING, SCALING_POWER)
@@ -321,6 +328,9 @@ def estimate_gridding_parameters(
       single,
       apply_w,
     ),
+    nw=nw,
+    wmin=wmin_d,
+    wmax=wmax_d,
     nm1min=nm1min,
     nm1max=nm1max,
     nshift=nshift,
