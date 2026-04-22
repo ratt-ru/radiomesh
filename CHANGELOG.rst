@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Add ``w{min,max}`` and ``nw`` to WGridderParameters (:pr:`77`)
 * Implement Heuristic Determination of Gridding Parameters (:pr:`75`)
 * Relax literal requirements in ESKernelStructRef (:pr:`73`)
 * Refactor Literal StructRef handling into base class (:pr:`66`, :pr:`67`, :pr:`68`)
