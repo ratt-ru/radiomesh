@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from numpy.polynomial.chebyshev import cheb2poly, chebinterpolate
 
-from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.es_kernel_structref import ESKernel
 from radiomesh.generated._es_kernel_params import KERNEL_DB
 
 # Representative KernelDB entries: one per support width in {4,6,8,10,12},
@@ -98,7 +98,7 @@ def _eval_taps(kernel, u: float):
 def test_sqrt_path_for_e0_half(apply_w):
   """analytic=True with e0=0.5 evaluates via exp(betak*(sqrt(1-x^2)-1))."""
   entry = _kernel_db_entry(epsilon=2e-13, oversampling=2.0, ndim=3 if apply_w else 2)
-  kernel = ESKernelProxy.fully_specified(
+  kernel = ESKernel.fully_specified(
     epsilon=entry.epsilon,
     oversampling=entry.oversampling,
     beta=entry.beta,
@@ -185,7 +185,7 @@ def test_polynomial_zero_at_boundary(entry):
   For even support W, centering the kernel at u = half_support_int places
   the first tap exactly at kernel argument x = -1.0, which must return 0.
   """
-  kernel = ESKernelProxy.fully_specified(
+  kernel = ESKernel.fully_specified(
     epsilon=entry.epsilon,
     oversampling=entry.oversampling,
     beta=entry.beta,

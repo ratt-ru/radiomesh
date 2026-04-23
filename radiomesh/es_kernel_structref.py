@@ -111,7 +111,7 @@ class ESKernelStructRef(LiteralStructRef):
     return False
 
 
-class ESKernelProxy(structref.StructRefProxy):
+class ESKernel(structref.StructRefProxy):
   def __new__(
     cls,
     epsilon: float | Datum[float] = 2e-13,
@@ -156,7 +156,7 @@ class ESKernelProxy(structref.StructRefProxy):
     single=True,
     apply_w=True,
   ):
-    return ESKernelProxy(
+    return ESKernel(
       Datum(epsilon),
       Datum(oversampling),
       Datum(beta),
@@ -168,10 +168,10 @@ class ESKernelProxy(structref.StructRefProxy):
     )
 
 
-structref.define_boxing(ESKernelStructRef, ESKernelProxy)
+structref.define_boxing(ESKernelStructRef, ESKernel)
 
 
-@overload(ESKernelProxy, prefer_literal=True)
+@overload(ESKernel, prefer_literal=True)
 def overload_es_kernel(
   epsilon, oversampling, beta, e0, support, analytic, single, apply_w
 ):

@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.es_kernel_structref import ESKernel
 
 
 def wgridder_conventions(
@@ -24,7 +24,7 @@ def image_params(
   uvw: npt.NDArray[np.floating],
   frequencies: npt.NDArray[np.floating],
   fov: float,
-  kernel: ESKernelProxy,
+  kernel: ESKernel,
 ) -> Tuple[int, int, int, float, float, float, float, float]:
   """Determine appropriate image and cell sizes
   given ``uvw`` coordinates, ``frequencies``, field of view ``fov``

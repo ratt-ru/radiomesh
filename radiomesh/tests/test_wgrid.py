@@ -3,7 +3,7 @@ import pytest
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.core import grid_data, wgrid_data
-from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.es_kernel_structref import ESKernel
 from radiomesh.generated._es_kernel_params import KERNEL_DB
 from radiomesh.gridding import wgrid
 from radiomesh.literals import Datum, Schema
@@ -55,7 +55,7 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
       best = entry
   assert best is not None, "no matching KERNEL_DB entry"
 
-  kernel = ESKernelProxy.fully_specified(
+  kernel = ESKernel.fully_specified(
     epsilon=epsilon,
     oversampling=best.oversampling,
     beta=best.beta,

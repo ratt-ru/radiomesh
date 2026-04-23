@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.es_kernel_structref import ESKernel
 from radiomesh.generated._es_kernel_params import KERNEL_DB
 from radiomesh.gridding import wgrid
 from radiomesh.literals import Datum, Schema
@@ -112,7 +112,7 @@ if __name__ == "__main__":
   if best is None:
     raise RuntimeError("No matching KERNEL_DB entry")
 
-  kernel = ESKernelProxy.fully_specified(
+  kernel = ESKernel.fully_specified(
     epsilon=epsilon,
     oversampling=best.oversampling,
     beta=best.beta,
