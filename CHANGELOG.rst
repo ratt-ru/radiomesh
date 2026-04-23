@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Replace ESKernel dataclass with a StructRef ESKernel (:pr:`78`)
 * Add ``w{min,max}`` and ``nw`` to WGridderParameters (:pr:`77`)
 * Implement Heuristic Determination of Gridding Parameters (:pr:`75`)
 * Relax literal requirements in ESKernelStructRef (:pr:`73`)

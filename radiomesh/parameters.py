@@ -20,7 +20,7 @@ from numba.extending import (
 from numba.typed import List as TypedList
 
 from radiomesh.errors import KernelSelectionError
-from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.es_kernel_structref import ESKernel
 from radiomesh.generated._es_kernel_params import KERNEL_DB
 from radiomesh.numba_utils import make_structref_property
 
@@ -185,7 +185,7 @@ class WGridderParameters(structref.StructRefProxy):
   kernel = make_structref_property("kernel")
   wmin = make_structref_property("wmin")
   wmax = make_structref_property("wmax")
-  dw = make_structref_property("nw")
+  nw = make_structref_property("nw")
   nm1min = make_structref_property("nm1min")
   nm1max = make_structref_property("nm1max")
   nshift = make_structref_property("nshift")
@@ -318,7 +318,7 @@ def estimate_gridding_parameters(
   return WGridderParameters(
     nu=best_nu,
     nv=best_nv,
-    kernel=ESKernelProxy(
+    kernel=ESKernel(
       best_kernel.epsilon,
       best_kernel.oversampling,
       best_kernel.beta,

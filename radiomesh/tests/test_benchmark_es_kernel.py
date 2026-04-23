@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.es_kernel_structref import ESKernel
 
 SUPPORTS = [4, 7, 12, 15]
 
@@ -68,10 +68,10 @@ _variants = {}
 for _support in SUPPORTS:
   _kw = {**BASE_KW, "support": _support}
   _kernels = {
-    "partial_analytic": ESKernelProxy(analytic=True, **_kw),
-    "partial_polynomial": ESKernelProxy(analytic=False, **_kw),
-    "full_analytic": ESKernelProxy.fully_specified(analytic=True, **_kw),
-    "full_polynomial": ESKernelProxy.fully_specified(analytic=False, **_kw),
+    "partial_analytic": ESKernel(analytic=True, **_kw),
+    "partial_polynomial": ESKernel(analytic=False, **_kw),
+    "full_analytic": ESKernel.fully_specified(analytic=True, **_kw),
+    "full_polynomial": ESKernel.fully_specified(analytic=False, **_kw),
   }
   _loops = {name: _make_gridding_loop(k) for name, k in _kernels.items()}
   _variants[_support] = {"kernels": _kernels, "loops": _loops}

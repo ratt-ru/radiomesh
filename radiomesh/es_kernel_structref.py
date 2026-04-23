@@ -111,7 +111,7 @@ class ESKernelStructRef(LiteralStructRef):
     return False
 
 
-class ESKernelProxy(structref.StructRefProxy):
+class ESKernel(structref.StructRefProxy):
   def __new__(
     cls,
     epsilon: float | Datum[float] = 2e-13,
@@ -156,7 +156,7 @@ class ESKernelProxy(structref.StructRefProxy):
     single=True,
     apply_w=True,
   ):
-    return ESKernelProxy(
+    return ESKernel(
       Datum(epsilon),
       Datum(oversampling),
       Datum(beta),
@@ -168,10 +168,10 @@ class ESKernelProxy(structref.StructRefProxy):
     )
 
 
-structref.define_boxing(ESKernelStructRef, ESKernelProxy)
+structref.define_boxing(ESKernelStructRef, ESKernel)
 
 
-@overload(ESKernelProxy, prefer_literal=True)
+@overload(ESKernel, prefer_literal=True)
 def overload_es_kernel(
   epsilon, oversampling, beta, e0, support, analytic, single, apply_w
 ):
@@ -214,6 +214,33 @@ def overload_es_kernel(
       instance.coeffs = generate_poly_coeffs(support, beta, e0, support + 3)
 
     return instance
+
+  return impl
+
+
+@overload_method(ESKernelStructRef, "allocate_taps")
+def overload_allocate_taps(self):
+  """Allocate a 1-D array of length ``support`` to hold kernel taps.
+
+  dtype is float32 when ``single`` is a literal True, otherwise float64.
+  """
+  support_lit = self.get_literal("support")
+  single_lit = self.get_literal("single")
+
+  if isinstance(single_lit, bool):
+    dtype = np.float32 if single_lit else np.float64
+  else:
+    dtype = np.float64
+
+  if isinstance(support_lit, int):
+    SUPPORT = support_lit
+
+    def impl(self):
+      return np.empty(SUPPORT, dtype)
+  else:
+
+    def impl(self):
+      return np.empty(self.support, dtype)
 
   return impl
 

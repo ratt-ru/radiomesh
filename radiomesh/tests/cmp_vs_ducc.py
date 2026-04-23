@@ -3,9 +3,11 @@ import time
 
 import numpy as np
 
-from radiomesh.es_kernel import ESKernel
-from radiomesh.gridding import WGridderParameters, wgrid
+from radiomesh.es_kernel_structref import ESKernel
+from radiomesh.generated._es_kernel_params import KERNEL_DB
+from radiomesh.gridding import wgrid
 from radiomesh.literals import Datum, Schema
+from radiomesh.parameters import WGridderParameters
 from radiomesh.utils import image_params
 
 
@@ -94,9 +96,33 @@ if __name__ == "__main__":
   freq = table(f"{args.ms}::SPECTRAL_WINDOW").getcol("CHAN_FREQ")[0]
 
   fov = 1.0
-  oversampling = 2.0
-  kernel = ESKernel(epsilon=1e-4, apply_w=False)
-  nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freq, fov, kernel)
+  epsilon = 1e-4
+  apply_w = False
+
+  best = None
+  for entry in KERNEL_DB:
+    if (
+      entry.ndim == (3 if apply_w else 2)
+      and not entry.single
+      and entry.oversampling <= 2.0
+      and entry.epsilon <= epsilon
+      and (best is None or entry.support < best.support)
+    ):
+      best = entry
+  if best is None:
+    raise RuntimeError("No matching KERNEL_DB entry")
+
+  kernel = ESKernel.fully_specified(
+    epsilon=epsilon,
+    oversampling=best.oversampling,
+    beta=best.beta,
+    e0=best.e0,
+    support=best.support,
+    analytic=True,
+    single=False,
+    apply_w=apply_w,
+  )
+  nx, ny, nw, pixsizex, pixsizey, wmin, wmax, dw = image_params(uvw, freq, fov, kernel)
 
   if args.backend == "ducc0":
     do_ducc0_wgridding(uvw, freq, vis, wgt, nx, ny, pixsizex, pixsizey, kernel.epsilon)
@@ -109,17 +135,15 @@ if __name__ == "__main__":
     flags = flags.reshape((ntime, -1) + flags.shape[1:])
 
     wgrid_params = WGridderParameters(
-      nx,
-      ny,
-      nw,
-      pixsizex,
-      pixsizey,
-      w0,
-      dw,
-      kernel,
-      Schema(("XX", "XY", "YX", "YY")),
-      Schema(("I", "Q", "U", "V")),
-      apply_w=False,
+      nu=nx,
+      nv=ny,
+      kernel=kernel,
+      wmin=wmin,
+      wmax=wmax,
+      nw=nw,
+      nm1min=0.0,
+      nm1max=0.0,
+      nshift=0.0,
     )
 
     ntime, nbl, nchan, ncorr = vis.shape
@@ -130,7 +154,14 @@ if __name__ == "__main__":
       wgt,
       flags,
       freq,
-      Datum(wgrid_params),
+      wgrid_params,
+      nx,
+      ny,
+      pixsizex,
+      pixsizey,
+      Schema(("XX", "XY", "YX", "YY")),
+      Schema(("I", "Q", "U", "V")),
+      Datum(apply_w),
     )
     print(
       f"Time taken to map ({ntime},{nbl},{nchan},{ncorr}) "
