@@ -3,9 +3,11 @@ import pytest
 
 from radiomesh.constants import LIGHTSPEED
 from radiomesh.core import grid_data, wgrid_data
-from radiomesh.es_kernel import ESKernel
-from radiomesh.gridding import WGridderParameters, wgrid
+from radiomesh.es_kernel_structref import ESKernelProxy
+from radiomesh.generated._es_kernel_params import KERNEL_DB
+from radiomesh.gridding import wgrid
 from radiomesh.literals import Datum, Schema
+from radiomesh.parameters import WGridderParameters
 from radiomesh.stokes import stokes_funcs
 from radiomesh.utils import image_params, wgridder_conventions
 
@@ -40,26 +42,46 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
   weights = rng.random(shape)
   flags = np.zeros_like(weights, np.uint8)
 
-  kernel = ESKernel.from_kernel_db(
-    epsilon, oversampling=oversampling, apply_w=apply_w, analytic=analytic
+  ndim = 3 if apply_w else 2
+  best = None
+  for entry in KERNEL_DB:
+    if (
+      entry.ndim == ndim
+      and not entry.single
+      and entry.oversampling <= oversampling
+      and entry.epsilon <= epsilon
+      and (best is None or entry.support < best.support)
+    ):
+      best = entry
+  assert best is not None, "no matching KERNEL_DB entry"
+
+  kernel = ESKernelProxy.fully_specified(
+    epsilon=epsilon,
+    oversampling=best.oversampling,
+    beta=best.beta,
+    e0=best.e0,
+    support=best.support,
+    analytic=analytic,
+    single=False,
+    apply_w=apply_w,
   )
 
   # Now recompute these params
-  nx, ny, nw, pixsizex, pixsizey, w0, dw = image_params(uvw, freqs, fov, kernel)
+  nx, ny, nw, pixsizex, pixsizey, wmin, wmax, dw = image_params(uvw, freqs, fov, kernel)
 
   wgrid_params = WGridderParameters(
-    nx,
-    ny,
-    nw,
-    pixsizex,
-    pixsizey,
-    w0,
-    dw,
-    kernel,
-    pol_schema=Schema(("XX", "XY", "YX", "YY")),
-    stokes_schema=Schema(("I", "Q", "U", "V")),
-    apply_w=apply_w,
+    nu=nx,
+    nv=ny,
+    kernel=kernel,
+    wmin=wmin,
+    wmax=wmax,
+    nw=nw,
+    nm1min=0.0,
+    nm1max=0.0,
+    nshift=0.0,
   )
+  pol_schema = Schema(("XX", "XY", "YX", "YY"))
+  stokes_schema = Schema(("I", "Q", "U", "V"))
 
   ndir = 5 if apply_jones else 1
   jones = np.zeros((ntime, na, nchan, npol), vis.dtype)
@@ -70,13 +92,28 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
     # wgrid_data and grid_data only apply the first jones matrix
     jones = np.stack([jones] * ndir, axis=3)
     assert jones.shape == (ntime, na, nchan, ndir, npol)
-    jones_params = (jones, antenna_pairs, wgrid_params.pol_schema)
+    jones_params = (jones, antenna_pairs, pol_schema)
   else:
     jones_params = None
 
-  vis_grid = wgrid(uvw, vis, weights, flags, freqs, Datum(wgrid_params), jones_params)
+  vis_grid = wgrid(
+    uvw,
+    vis,
+    weights,
+    flags,
+    freqs,
+    wgrid_params,
+    nx,
+    ny,
+    pixsizex,
+    pixsizey,
+    pol_schema,
+    stokes_schema,
+    Datum(apply_w),
+    jones_params,
+  )
 
-  expected_shape = (len(wgrid_params.stokes_schema), ndir)
+  expected_shape = (len(stokes_schema), ndir)
   expected_shape += ((nw,) if apply_w else ()) + (nx, ny)
   assert vis_grid.shape == expected_shape
   assert vis_grid.dtype == vis.dtype
@@ -89,6 +126,7 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
   usign, vsign, _, _, _ = wgridder_conventions(0.0, 0.0)
 
   if apply_w:
+    w0 = wmin - dw * (kernel.support / 2.0)
     result = wgrid_data(
       uvw,
       freqs,
@@ -98,19 +136,19 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
       jones,
       ant1,
       ant2,
-      wgrid_params.nx,
-      wgrid_params.ny,
-      wgrid_params.pixsizex,
-      wgrid_params.pixsizey,
+      nx,
+      ny,
+      pixsizex,
+      pixsizey,
       npol,
       vis_func,
       wgt_func,
       w0,
       dw,
       nw,
-      wgrid_params.kernel.support,
-      wgrid_params.kernel.beta,
-      wgrid_params.kernel.e0,
+      kernel.support,
+      kernel.beta,
+      kernel.e0,
       usign,
       vsign,
     )
@@ -124,16 +162,16 @@ def test_numba_wgrid(nx, epsilon, fov, oversampling, apply_w, apply_jones, analy
       jones,
       ant1,
       ant2,
-      wgrid_params.nx,
-      wgrid_params.ny,
-      wgrid_params.pixsizex,
-      wgrid_params.pixsizey,
+      nx,
+      ny,
+      pixsizex,
+      pixsizey,
       npol,
       vis_func,
       wgt_func,
-      alpha=wgrid_params.kernel.support,
-      beta=wgrid_params.kernel.beta,
-      e0=wgrid_params.kernel.e0,
+      alpha=kernel.support,
+      beta=kernel.beta,
+      e0=kernel.e0,
       usign=usign,
       vsign=vsign,
     )

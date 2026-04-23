@@ -218,6 +218,33 @@ def overload_es_kernel(
   return impl
 
 
+@overload_method(ESKernelStructRef, "allocate_taps")
+def overload_allocate_taps(self):
+  """Allocate a 1-D array of length ``support`` to hold kernel taps.
+
+  dtype is float32 when ``single`` is a literal True, otherwise float64.
+  """
+  support_lit = self.get_literal("support")
+  single_lit = self.get_literal("single")
+
+  if isinstance(single_lit, bool):
+    dtype = np.float32 if single_lit else np.float64
+  else:
+    dtype = np.float64
+
+  if isinstance(support_lit, int):
+    SUPPORT = support_lit
+
+    def impl(self):
+      return np.empty(SUPPORT, dtype)
+  else:
+
+    def impl(self):
+      return np.empty(self.support, dtype)
+
+  return impl
+
+
 @overload_method(ESKernelStructRef, "evaluate")
 def overload_evaluate(self, x):
   if (kernel_params := self.literal_kernel_params()) is not False:

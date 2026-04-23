@@ -185,7 +185,7 @@ class WGridderParameters(structref.StructRefProxy):
   kernel = make_structref_property("kernel")
   wmin = make_structref_property("wmin")
   wmax = make_structref_property("wmax")
-  dw = make_structref_property("nw")
+  nw = make_structref_property("nw")
   nm1min = make_structref_property("nm1min")
   nm1max = make_structref_property("nm1max")
   nshift = make_structref_property("nshift")

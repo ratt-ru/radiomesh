@@ -4,7 +4,6 @@ Verifies that:
 - e0 == 0.5 with analytic=True uses the sqrt path
 - polynomial and analytic evaluations of the same (W, betak, e0) agree to
   within numerical tolerance, tested directly via generate_poly_coeffs
-- ESKernel with analytic=False selects parameters from KERNEL_DB
 - polynomial kernel returns 0 outside support bounds
 """
 
@@ -13,10 +12,10 @@ import math
 import numba
 import numpy as np
 import pytest
+from numpy.polynomial.chebyshev import cheb2poly, chebinterpolate
 
-from radiomesh.es_kernel import ESKernel, eval_es_kernel, generate_poly_coeffs_numpy
+from radiomesh.es_kernel_structref import ESKernelProxy
 from radiomesh.generated._es_kernel_params import KERNEL_DB
-from radiomesh.literals import Datum
 
 # Representative KernelDB entries: one per support width in {4,6,8,10,12},
 # ndim in (2, 3), double precision, oversampling=2.0
@@ -31,17 +30,63 @@ _SAMPLE_ENTRIES = [
 ]
 
 
-def _make_eval_fn(kernel: ESKernel):
-  """Return a JIT-compiled function that evaluates the kernel for a given u."""
-  HALF_SUPPORT_INT = kernel.half_support_int
-  KERNEL = Datum(kernel)
+def generate_poly_coeffs_numpy(
+  support: int, beta: float, e0: float, degree: int | None = None
+) -> tuple[tuple[float, ...], ...]:
+  """NumPy reference for the Numba ``generate_poly_coeffs`` in
+  ``es_kernel_structref.py``. Retained in this test file only.
 
-  @numba.njit
-  def fn(u: float):
-    ps = int(np.round(u)) - HALF_SUPPORT_INT
-    return eval_es_kernel(KERNEL, u, ps)
+  Returns a nested tuple ``(D+1) x support`` in Horner (descending) order.
+  """
+  D = degree if degree is not None else support + 3
+  betak = beta * support
 
-  return fn
+  def es_kernel(v: np.ndarray) -> np.ndarray:
+    tmp = (1.0 - v) * (1.0 + v)
+    valid = tmp >= 0.0
+    safe_tmp = np.where(valid, tmp, 0.0)
+    return np.where(valid, np.exp(betak * (np.power(safe_tmp, e0) - 1.0)), 0.0)
+
+  coeff = np.empty((D + 1, support))
+
+  for i in range(support):
+    left = -1.0 + 2.0 * i / support
+    right = -1.0 + 2.0 * (i + 1) / support
+    mid = (left + right) * 0.5
+    half = (right - left) * 0.5
+
+    cheb_c = chebinterpolate(lambda locx, m=mid, h=half: es_kernel(locx * h + m), D)
+    poly_c = cheb2poly(cheb_c)
+    coeff[:, i] = poly_c[::-1]
+
+  return tuple(tuple(float(v) for v in row) for row in coeff)
+
+
+def _kernel_db_entry(epsilon, oversampling, ndim, single=False):
+  best = None
+  for k in KERNEL_DB:
+    if (
+      k.ndim == ndim
+      and k.single == single
+      and k.oversampling <= oversampling
+      and k.epsilon <= epsilon
+      and (best is None or k.support < best.support)
+    ):
+      best = k
+  assert best is not None, "no matching KERNEL_DB entry"
+  return best
+
+
+@numba.njit
+def _eval_taps(kernel, u: float):
+  half_support_int = kernel.support // 2
+  support = kernel.support
+  ps = int(np.round(u)) - half_support_int
+  out = kernel.allocate_taps()
+  for offset in range(support):
+    x = (offset + ps) - u
+    out[offset] = kernel.evaluate(x)
+  return out
 
 
 # ---------------------------------------------------------------------------
@@ -52,28 +97,36 @@ def _make_eval_fn(kernel: ESKernel):
 @pytest.mark.parametrize("apply_w", [False, True], ids=["ndim2", "ndim3"])
 def test_sqrt_path_for_e0_half(apply_w):
   """analytic=True with e0=0.5 evaluates via exp(betak*(sqrt(1-x^2)-1))."""
-  kernel = ESKernel(analytic=True, e0=0.5, apply_w=apply_w)
-  fn = _make_eval_fn(kernel)
-
-  HALF_SUPPORT = kernel.half_support
-  BETAK = kernel.support * kernel.beta
+  entry = _kernel_db_entry(epsilon=2e-13, oversampling=2.0, ndim=3 if apply_w else 2)
+  kernel = ESKernelProxy.fully_specified(
+    epsilon=entry.epsilon,
+    oversampling=entry.oversampling,
+    beta=entry.beta,
+    e0=0.5,
+    support=entry.support,
+    analytic=True,
+    single=False,
+    apply_w=apply_w,
+  )
+  half_support = kernel.support / 2.0
+  betak = kernel.support * kernel.beta
+  half_support_int = kernel.support // 2
 
   u = 2.3
-  ps = int(np.round(u)) - kernel.half_support_int
-  kernel_values = fn(u)
+  ps = int(np.round(u)) - half_support_int
+  kernel_values = _eval_taps(kernel, u)
 
   for offset, kv in enumerate(kernel_values):
-    x = (offset + ps - u) / HALF_SUPPORT
+    x = (offset + ps - u) / half_support
     if abs(x) >= 1.0:
       expected = 0.0
     else:
-      expected = math.exp(BETAK * (math.sqrt(1.0 - x * x) - 1.0))
+      expected = math.exp(betak * (math.sqrt(1.0 - x * x) - 1.0))
     assert abs(kv - expected) < 1e-15, f"offset={offset}: got {kv}, expected {expected}"
 
 
 # ---------------------------------------------------------------------------
 # Test 2: polynomial matches analytic for the same (W, betak, e0)
-# Uses generate_poly_coeffs_numpy directly to avoid ESKernel support-mismatch issues
 # ---------------------------------------------------------------------------
 
 
@@ -113,35 +166,13 @@ def test_polynomial_matches_analytic(entry):
     abs(_poly_eval(coeffs, SUPPORT, float(x)) - _analytic_eval(betak, e0, float(x)))
     for x in xs
   )
-  # The polynomial of degree D=W+3 achieves accuracy well within the
-  # kernel's own epsilon — not machine precision.
   assert (
     max_err < entry.epsilon
   ), f"W={SUPPORT}: max |poly - analytic| = {max_err:.2e} > epsilon {entry.epsilon:.2e}"
 
 
 # ---------------------------------------------------------------------------
-# Test 3: ESKernel(analytic=False) selects beta/e0/support from KERNEL_DB
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-  "entry", _SAMPLE_ENTRIES, ids=lambda e: f"W{e.support}_ndim{e.ndim}"
-)
-def test_polynomial_kernel_uses_kernel_db(entry):
-  """from_kernel_db selects beta, e0, support from the KernelDB entry."""
-  k = ESKernel.from_kernel_db(
-    epsilon=entry.epsilon,
-    oversampling=entry.oversampling,
-    apply_w=(entry.ndim == 3),
-  )
-  assert k.support == entry.support
-  assert k.beta == entry.beta
-  assert k.e0 == entry.e0
-
-
-# ---------------------------------------------------------------------------
-# Test 4: polynomial returns 0 at support boundaries (x == ±1)
+# Test 3: polynomial returns 0 at support boundaries (x == ±1)
 # ---------------------------------------------------------------------------
 
 
@@ -154,13 +185,20 @@ def test_polynomial_zero_at_boundary(entry):
   For even support W, centering the kernel at u = half_support_int places
   the first tap exactly at kernel argument x = -1.0, which must return 0.
   """
-  k = ESKernel.from_kernel_db(epsilon=entry.epsilon, oversampling=entry.oversampling)
-  fn = _make_eval_fn(k)
-
-  if k.support % 2 == 0:
-    vals = fn(float(k.half_support_int))
+  kernel = ESKernelProxy.fully_specified(
+    epsilon=entry.epsilon,
+    oversampling=entry.oversampling,
+    beta=entry.beta,
+    e0=entry.e0,
+    support=entry.support,
+    analytic=False,
+    single=False,
+    apply_w=(entry.ndim == 3),
+  )
+  if kernel.support % 2 == 0:
+    vals = _eval_taps(kernel, float(kernel.support // 2))
     assert (
       vals[0] == 0.0
-    ), f"W={k.support}: first tap at x=-1 should be 0, got {vals[0]}"
+    ), f"W={kernel.support}: first tap at x=-1 should be 0, got {vals[0]}"
   else:
     pytest.skip("odd support: boundary tap does not land exactly at x=-1")

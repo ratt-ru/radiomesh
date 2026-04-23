@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 
 from radiomesh.constants import LIGHTSPEED
-from radiomesh.es_kernel import ESKernel
+from radiomesh.es_kernel_structref import ESKernelProxy
 
 
 def wgridder_conventions(
@@ -24,8 +24,8 @@ def image_params(
   uvw: npt.NDArray[np.floating],
   frequencies: npt.NDArray[np.floating],
   fov: float,
-  kernel: ESKernel,
-) -> Tuple[int, int, int, float, float, float, float]:
+  kernel: ESKernelProxy,
+) -> Tuple[int, int, int, float, float, float, float, float]:
   """Determine appropriate image and cell sizes
   given ``uvw`` coordinates, ``frequencies``, field of view ``fov``
   and ``kernel``.
@@ -40,10 +40,11 @@ def image_params(
     This function currently only returns even grids
 
   Returns:
-    A tuple (nx, ny, nw, pixelsizex, pixelsizey, w0, dw)
-    of imaging parameters describing the grid dimensions,
-    the cell size in radians and the w plane starting value
-    and increments.
+    A tuple (nx, ny, nw, pixelsizex, pixelsizey, wmin, wmax, dw).
+    ``wmin`` and ``wmax`` follow the gridding convention
+    ``wmin = w0 + dw * support/2`` and ``wmax = wmin + dw * (nw - support)``,
+    so they round-trip exactly with ``dw = (wmax - wmin) / (nw - support)``
+    and ``w0 = wmin - dw * support/2``.
   """
   u, v, _ = uvw.reshape((-1, 3)).T
 
@@ -69,14 +70,18 @@ def image_params(
   eps = x**2 + y**2
   nm1 = -eps / (np.sqrt(1.0 - eps) + 1.0)
 
-  wmax = np.abs(uvw[..., -1] * frequencies.max() / LIGHTSPEED).max()
-  wmin = np.abs(uvw[..., -1] * frequencies.min() / LIGHTSPEED).min()
+  w_data_max = np.abs(uvw[..., -1] * frequencies.max() / LIGHTSPEED).max()
+  w_data_min = np.abs(uvw[..., -1] * frequencies.min() / LIGHTSPEED).min()
 
   # removing the factor of a half compared to expression in the
   # paper gives the same w parameters as reported by the wgridder
   # but I can't seem to get that to agree with the DFT
   dw = 1.0 / (2.0 * kernel.oversampling * np.abs(nm1).max())
-  nw = int(np.ceil((wmax - wmin) / dw)) + kernel.support
-  w0 = (wmin + wmax) / 2.0 - dw * (nw - 1) / 2.0
+  nw = int(np.ceil((w_data_max - w_data_min) / dw)) + kernel.support
+  w0 = (w_data_min + w_data_max) / 2.0 - dw * (nw - 1) / 2.0
 
-  return (nx, ny, nw, u_cell_rad, v_cell_rad, w0, dw)
+  half_support = kernel.support / 2.0
+  wmin = w0 + dw * half_support
+  wmax = w0 + dw * (nw - half_support)
+
+  return (nx, ny, nw, u_cell_rad, v_cell_rad, wmin, wmax, dw)

@@ -2,8 +2,8 @@ import numba
 import numpy as np
 import pytest
 
-from radiomesh.es_kernel import generate_poly_coeffs_numpy
 from radiomesh.es_kernel_structref import ESKernelProxy, generate_poly_coeffs
+from radiomesh.tests.test_polynomial_kernel import generate_poly_coeffs_numpy
 
 
 @pytest.mark.parametrize(
@@ -66,6 +66,40 @@ def test_evaluate_analytic_vs_polynomial(support, beta, e0, rtol, atol):
     np.testing.assert_allclose(fa_val, fp_val, rtol=rtol, atol=atol)
     np.testing.assert_allclose(pa_val, fa_val)
     np.testing.assert_allclose(pp_val, fp_val)
+
+
+@pytest.mark.parametrize("support", [4, 7, 12])
+@pytest.mark.parametrize("single", [True, False])
+def test_allocate_taps(support, single):
+  """allocate_taps returns a 1-D array of length support.
+
+  dtype follows ``single`` when it's a literal (fully_specified); otherwise
+  falls back to float64.
+  """
+  kw = {
+    "epsilon": 2e-13,
+    "oversampling": 2.0,
+    "beta": 2.3,
+    "e0": 0.5,
+    "support": support,
+    "analytic": True,
+    "single": single,
+    "apply_w": True,
+  }
+  partial = ESKernelProxy(**kw)
+  full = ESKernelProxy.fully_specified(**kw)
+
+  @numba.njit
+  def allocate(k):
+    return k.allocate_taps()
+
+  partial_taps = allocate(partial)
+  assert partial_taps.shape == (support,)
+  assert partial_taps.dtype == np.float64
+
+  full_taps = allocate(full)
+  assert full_taps.shape == (support,)
+  assert full_taps.dtype == (np.float32 if single else np.float64)
 
 
 def test_evaluate_boundary():
