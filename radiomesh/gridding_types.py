@@ -1,14 +1,21 @@
+import numpy as np
 from numba import types
 from numba.core.types import StructRef
 from numba.experimental import structref
 from numba.extending import (
   overload,
   overload_attribute,
-  overload_classmethod,
   overload_method,
+  register_jitable,
 )
 
 from radiomesh.constants import CACHE_LINE_SIZE, LIGHTSPEED
+
+# A 64 bit cache aligned integer counter
+CachedAlignedCounter = types.Record(
+  [("count", {"type": types.int64, "offset": 0})], size=CACHE_LINE_SIZE, aligned=True
+)
+
 
 # Tile index takes 63 bits, we use 21 bits for each of the components
 UVW_TILE_BITS = 63
@@ -24,86 +31,33 @@ V_TILE_MASK = TILE_MASK << V_TILE_BIT_OFFSET
 W_TILE_MASK = TILE_MASK << W_TILE_BIT_OFFSET
 
 
-# A 64 bit cache aligned integer counter
-CachedAlignedCounter = types.Record(
-  [("count", {"type": types.int64, "offset": 0})], size=CACHE_LINE_SIZE, aligned=True
-)
-
-# Align with cache line to avoid false sharing during atomic operations
-UvwTile = types.Record(
-  [("index", {"type": types.uint64, "offset": 0})], size=CACHE_LINE_SIZE, aligned=True
-)
+# UVW Tile handling functions
+@register_jitable
+def index_from_uvw_tile(u_tile, v_tile, w_tile):
+  index = np.uint64((u_tile & TILE_MASK) << U_TILE_BIT_OFFSET)
+  index |= (v_tile & TILE_MASK) << V_TILE_BIT_OFFSET
+  index |= (w_tile & TILE_MASK) << W_TILE_BIT_OFFSET
+  return index
 
 
-@overload_method(types.Record, "set_index")
-def overload_set_index(self, u_tile, v_tile, w_tile):
-  if self == UvwTile:
-
-    def impl(self, u_tile, v_tile, w_tile):
-      self.index = (u_tile & TILE_MASK) << U_TILE_BIT_OFFSET
-      self.index |= (v_tile & TILE_MASK) << V_TILE_BIT_OFFSET
-      self.index |= (w_tile & TILE_MASK) << W_TILE_BIT_OFFSET
-
-    return impl
+@register_jitable
+def u_tile_from_index(index):
+  return (index & U_TILE_MASK) >> U_TILE_BIT_OFFSET
 
 
-@overload_attribute(types.Record, "u_tile")
-def overload_record_u_tile(self):
-  if self == UvwTile:
-    return lambda self: (self.index & U_TILE_MASK) >> U_TILE_BIT_OFFSET
+@register_jitable
+def v_tile_from_index(index):
+  return (index & V_TILE_MASK) >> V_TILE_BIT_OFFSET
 
 
-@overload_attribute(types.Record, "v_tile")
-def overload_record_v_tile(self):
-  if self == UvwTile:
-    return lambda self: (self["index"] & V_TILE_MASK) >> V_TILE_BIT_OFFSET
+@register_jitable
+def w_tile_from_index(index):
+  return (index & W_TILE_MASK) >> W_TILE_BIT_OFFSET
 
 
-@overload_attribute(types.Record, "w_tile")
-def overload_record_w_tile(self):
-  if self == UvwTile:
-    return lambda self: (self["index"] & W_TILE_MASK) >> W_TILE_BIT_OFFSET
-
-
-# StructUvwTile
-@structref.register
-class StructUvwTile(StructRef):
-  def preprocess_fields(self, fields):
-    """Disallow literal types in field definitions"""
-    return tuple((n, types.unliteral(t)) for n, t in fields)
-
-
-StructUvwTileType = StructUvwTile(fields=[("index", types.uint64)])
-
-
-@overload_classmethod(StructUvwTile, "from_uvw")
-def overload_from_uvw(cls, u_tile, v_tile, w_tile):
-  """Implement a from_uvw classmethod to avoid the overhead of creating
-  a full constructor via a StructRefProxy"""
-
-  def impl(cls, u_tile, v_tile, w_tile):
-    obj = structref.new(StructUvwTileType)
-    obj.index = (u_tile & TILE_MASK) << U_TILE_BIT_OFFSET
-    obj.index |= (v_tile & TILE_MASK) << V_TILE_BIT_OFFSET
-    obj.index |= (w_tile & TILE_MASK) << W_TILE_BIT_OFFSET
-    return obj
-
-  return impl
-
-
-@overload_attribute(StructUvwTile, "u_tile")
-def overload_u_tile(self):
-  return lambda self: (self.index & U_TILE_MASK) >> U_TILE_BIT_OFFSET
-
-
-@overload_attribute(StructUvwTile, "v_tile")
-def overload_v_tile(self):
-  return lambda self: (self.index & V_TILE_MASK) >> V_TILE_BIT_OFFSET
-
-
-@overload_attribute(StructUvwTile, "w_tile")
-def overload_w_tile(self):
-  return lambda self: (self.index & W_TILE_MASK) >> W_TILE_BIT_OFFSET
+@register_jitable
+def uvw_tile_from_index(index):
+  return (u_tile_from_index(index), v_tile_from_index(index), w_tile_from_index(index))
 
 
 @structref.register
