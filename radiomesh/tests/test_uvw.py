@@ -2,7 +2,7 @@ import numba
 import numpy as np
 import pytest
 
-from radiomesh.gridding_types import GriddingMetadata
+from radiomesh.gridding_types import WGridderImpl
 
 # Synthetic Y-shaped antenna array near lat=-30°, lon=21°
 # (MeerKAT-like, ~1 km baselines).
@@ -95,7 +95,7 @@ def scan_data(visibilities, weight, flag, uvw, frequencies, gridding=False):
   ntime, nbl, _ = uvw.shape
   (nchan,) = frequencies.shape
 
-  grid_meta = GriddingMetadata(uvw, frequencies, False, False, False)
+  grid_meta = WGridderImpl(uvw, frequencies, False, False, False)
 
   ntime = grid_meta.ntime
   nbl = grid_meta.nbl
@@ -130,3 +130,5 @@ def test_uvw_scan(uvw_coordinates, frequencies):
   flag = rng.integers(0, 8, size=weight.shape, dtype=np.uint8)
 
   scan_data(vis, weight, flag, uvw_coordinates, frequencies)
+
+  breakpoint()

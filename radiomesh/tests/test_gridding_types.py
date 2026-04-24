@@ -1,12 +1,18 @@
+from contextlib import nullcontext
+
 import numba
 import numpy as np
+import pytest
 from numba import typed
 from numba.np.numpy_support import as_struct_dtype
 
 import radiomesh.intrinsics  # noqa: F401
+from radiomesh.constants import LIGHTSPEED
 from radiomesh.gridding_types import (
   TILE_BITS,
   CachedAlignedCounter,
+  ParallelWGridderImpl,
+  WGridderImpl,
   index_from_uvw_tile,
   u_tile_from_index,
   uvw_tile_from_index,
@@ -104,3 +110,54 @@ def test_uvw_tile_index():
   ]:
     assert get_tiles(u, v, w) == (u, v, w)
     assert get_tiles_tuple(u, v, w) == (u, v, w)
+
+
+@numba.njit(parallel=True, nogil=True)
+def parallel_fn(uvw, frequencies, vis, weight, flag):
+  impl = ParallelWGridderImpl(uvw, frequencies, False, False, False)
+  impl.scan_data(vis, weight, flag)
+  return impl
+
+
+@numba.njit(parallel=False, nogil=True)
+def serial_fn(uvw, frequencies, vis, weight, flag):
+  impl = WGridderImpl(uvw, frequencies, False, False, False)
+  impl.scan_data(vis, weight, flag)
+  return impl
+
+
+@pytest.mark.filterwarnings(
+  "ignore::numba.core.errors.NumbaPerformanceWarning",
+  reason="The njit driver has no parallel directives, but the overloads do",
+)
+@pytest.mark.parametrize(
+  "parallel, grid_fn, ctx",
+  [
+    (True, parallel_fn, nullcontext()),
+    (
+      False,
+      serial_fn,
+      pytest.raises(RuntimeError, match="self.setup has not been called"),
+    ),
+  ],
+)
+def test_wgridder_impl(parallel, grid_fn, ctx, uvw_coordinates, frequencies):
+  rng = np.random.default_rng(seed=42)
+  ntime, nbl, _ = uvw_coordinates.shape
+  (nchan,) = frequencies.shape
+
+  weight = rng.random((ntime, nbl, nchan))
+  vis = rng.random(weight.shape) + rng.random(weight.shape) * 1j
+  flag = rng.integers(0, 8, size=weight.shape, dtype=np.uint8)
+
+  impl = grid_fn(uvw_coordinates, frequencies, vis, weight, flag)
+  with ctx:
+    grid_fn.parallel_diagnostics(level=4)
+
+  ir = grid_fn.inspect_llvm()[grid_fn.signatures[0]]
+  assert "parfor" in ir if parallel else "parfor" not in "ir"
+
+  mask = (np.abs(vis) * weight * (flag != 0)) > 0.0
+  np.testing.assert_array_equal(mask, impl.mask)
+  assert np.count_nonzero(mask) == impl.nvis
+  np.testing.assert_array_equal(frequencies / LIGHTSPEED, impl.wavelengths)
