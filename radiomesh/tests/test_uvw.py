@@ -130,5 +130,3 @@ def test_uvw_scan(uvw_coordinates, frequencies):
   flag = rng.integers(0, 8, size=weight.shape, dtype=np.uint8)
 
   scan_data(vis, weight, flag, uvw_coordinates, frequencies)
-
-  breakpoint()
