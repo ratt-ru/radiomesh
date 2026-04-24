@@ -123,7 +123,6 @@ def test_none_type_intrinsic():
   @intrinsic
   def fintrinsic(typingctx, data, jones):
     sig = types.none(data, jones)
-    print(sig, jones == types.none)
 
     def codegen(context, builder, signature, args):
       return None
@@ -134,4 +133,4 @@ def test_none_type_intrinsic():
   def f(a, b=None):
     return fintrinsic(a, b)
 
-  f((1, 2, 3))
+  assert f((1, 2, 3)) is None
