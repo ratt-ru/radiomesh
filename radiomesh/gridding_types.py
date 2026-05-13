@@ -479,9 +479,9 @@ def _register_wgridder_overloads(template):
       # np.zeros + Record dtype trips parfors on the parallel variant; allocate
       # uninitialised and explicitly zero the count field instead.
       bucket_count = np.empty((ntiles_u, ntiles_v, nwmin), dtype=COUNTER_DTYPE)
-      for tu in range(ntiles_u):
-        for tv in range(ntiles_v):
-          for mw in range(nwmin):
+      for tu in numba.prange(ntiles_u):
+        for tv in numba.prange(ntiles_v):
+          for mw in numba.prange(nwmin):
             bucket_count[tu, tv, mw].count = np.int64(0)
       self.bucket_count = bucket_count
 
