@@ -48,6 +48,10 @@ COUNTER_DTYPE = as_struct_dtype(CachedAlignedCounter)
 SAMPLE_CHANRANGE_DTYPE = as_struct_dtype(SampleChanRange)
 BLOCK_START_DTYPE = as_struct_dtype(BlockStartEntry)
 
+# Default internal mask values
+CHANNEL_EMPTY = 0
+CHANNEL_FILLED = 1
+TILE_BOUNDARY = 2
 
 # Tile index takes 63 bits, we use 21 bits for each of the components
 UVW_TILE_BITS = 63
@@ -497,12 +501,12 @@ def _register_wgridder_overloads(template):
 
           ch0 = 0
           while ch0 < nchan:
-            while ch0 < nchan and self.mask[t, bl, ch0] == 0:
+            while ch0 < nchan and self.mask[t, bl, ch0] == CHANNEL_EMPTY:
               ch0 += 1
             if ch0 >= nchan:
               break
             ch1 = ch0 + 1
-            while ch1 < nchan and self.mask[t, bl, ch1] != 0:
+            while ch1 < nchan and self.mask[t, bl, ch1] != CHANNEL_EMPTY:
               ch1 += 1
 
             tile_index0 = self.uvw_tile_index(u, v, w, ch0)
@@ -530,7 +534,7 @@ def _register_wgridder_overloads(template):
                     bucket_count.item_ptr(tu, tv, mw).field_ptr("count").atomic_rmw(
                       "add", 1
                     )
-                    self.mask[t, bl, ch_hi] = 2
+                    self.mask[t, bl, ch_hi] = TILE_BOUNDARY
                 else:
                   ch_mid = ch_lo + (ch_hi - ch_lo) // 2
                   tile_index_mid = self.uvw_tile_index(u, v, w, ch_mid)
@@ -607,6 +611,7 @@ def _register_wgridder_overloads(template):
       ranges = self.ranges
 
       for t in numba.prange(ntime):
+        # Local buffer of channel ranges
         interbuf = np.empty((nchan + 1, 2), dtype=np.int32)
         for bl in range(nbl):
           u_raw = self.uvw[t, bl, 0]
@@ -614,33 +619,40 @@ def _register_wgridder_overloads(template):
           w_raw = self.uvw[t, bl, 2]
           u, v, w, _ = fix_w(u_raw, v_raw, w_raw)
 
-          interbuf_size = 0
-          current_tile_index = index_from_uvw_tile(0, 0, 0)
-          has_current = False
-          chan0 = 0
-          active = False
+          interbuf_size = 0  # Channel range buffer size
+          current_tile_index = index_from_uvw_tile(0, 0, 0)  # Default value
+          has_current = False  # Is current_tile_index initialised
+          chan0 = 0  # First channel of the run
+          active = False  # Is this an active run
+
+          def flush(interbuf_size):
+            """Flush the discovered channel runs
+            in interbuf into ranges"""
+            tu, tv, mw = uvw_tile_from_index(current_tile_index)
+            slot = (
+              bucket_count.item_ptr(tu, tv, mw)
+              .field_ptr("count")
+              .atomic_rmw("add", interbuf_size)
+            )
+            for i in range(interbuf_size):
+              ranges[slot + i].time = numba.uint32(t)
+              ranges[slot + i].bl = numba.uint32(bl)
+              ranges[slot + i].ch_begin = numba.uint16(interbuf[i, 0])
+              ranges[slot + i].ch_end = numba.uint16(interbuf[i, 1])
+            return 0
 
           for ch in range(nchan):
             xmask = self.mask[t, bl, ch]
-            if xmask != 0:
-              if (not active) or xmask == 2:
+            if xmask != CHANNEL_EMPTY:
+              # Channel is active
+              if (not active) or xmask == TILE_BOUNDARY:
+                # There is no active run or we're on a tile boundary
                 new_tile_index = self.uvw_tile_index(u, v, w, ch)
                 if not active:
+                  # Start an active run
                   active = True
                   if has_current and current_tile_index != new_tile_index:
-                    # flush pending entries for previous bucket
-                    tu, tv, mw = uvw_tile_from_index(current_tile_index)
-                    slot = (
-                      bucket_count.item_ptr(tu, tv, mw)
-                      .field_ptr("count")
-                      .atomic_rmw("add", interbuf_size)
-                    )
-                    for i in range(interbuf_size):
-                      ranges[slot + i].time = numba.uint32(t)
-                      ranges[slot + i].bl = numba.uint32(bl)
-                      ranges[slot + i].ch_begin = numba.uint16(interbuf[i, 0])
-                      ranges[slot + i].ch_end = numba.uint16(interbuf[i, 1])
-                    interbuf_size = 0
+                    interbuf_size = flush(interbuf_size)
                   current_tile_index = new_tile_index
                   has_current = True
                   chan0 = ch
@@ -649,21 +661,11 @@ def _register_wgridder_overloads(template):
                   interbuf[interbuf_size, 0] = chan0
                   interbuf[interbuf_size, 1] = ch
                   interbuf_size += 1
-                  tu, tv, mw = uvw_tile_from_index(current_tile_index)
-                  slot = (
-                    bucket_count.item_ptr(tu, tv, mw)
-                    .field_ptr("count")
-                    .atomic_rmw("add", np.int64(interbuf_size))
-                  )
-                  for i in range(interbuf_size):
-                    ranges[slot + i].time = numba.uint32(t)
-                    ranges[slot + i].bl = numba.uint32(bl)
-                    ranges[slot + i].ch_begin = numba.uint16(interbuf[i, 0])
-                    ranges[slot + i].ch_end = numba.uint16(interbuf[i, 1])
-                  interbuf_size = 0
+                  interbuf_size = flush(interbuf_size)
                   current_tile_index = new_tile_index
                   chan0 = ch
             else:
+              # Inactive channel, complete any active channel run
               if active:
                 interbuf[interbuf_size, 0] = chan0
                 interbuf[interbuf_size, 1] = ch
@@ -671,22 +673,13 @@ def _register_wgridder_overloads(template):
                 active = False
 
           if active:
+            # Complete any active channel runs
             interbuf[interbuf_size, 0] = chan0
             interbuf[interbuf_size, 1] = nchan
             interbuf_size += 1
 
           if interbuf_size > 0 and has_current:
-            tu, tv, mw = uvw_tile_from_index(current_tile_index)
-            slot = (
-              bucket_count.item_ptr(tu, tv, mw)
-              .field_ptr("count")
-              .atomic_rmw("add", np.int64(interbuf_size))
-            )
-            for i in range(interbuf_size):
-              ranges[slot + i].time = numba.uint32(t)
-              ranges[slot + i].bl = numba.uint32(bl)
-              ranges[slot + i].ch_begin = numba.uint16(interbuf[i, 0])
-              ranges[slot + i].ch_end = numba.uint16(interbuf[i, 1])
+            interbuf_size = flush(interbuf_size)
 
     return impl
 
@@ -910,7 +903,7 @@ def _register_wgridder_overloads(template):
           for ch in range(nchan):
             v = visibilities[t, bl, ch]
             if (v.real**2 + v.imag**2) * weight[t, bl, ch] * (flag[t, bl, ch]) != 0:
-              mask[t, bl, ch] = 1
+              mask[t, bl, ch] = CHANNEL_FILLED
               nvis += 1
               w = self.effective_abs_w(t, bl, ch)
               wmin_d = min(wmin_d, w)
