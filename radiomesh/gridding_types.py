@@ -154,6 +154,15 @@ class WGridderImplStructRef(StructRef):
     """Disallow literal types in field definitions"""
     return tuple((n, types.unliteral(t)) for n, t in fields)
 
+  @property
+  def log2tile(self) -> int:
+    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
+    return 5 if uvw_dtype == np.float32 else 4
+
+  @property
+  def tilesize(self) -> int:
+    return 1 << self.log2tile
+
 
 @structref.register
 class ParallelWGridderImplStructRef(WGridderImplStructRef):
@@ -396,8 +405,7 @@ def _register_wgridder_overloads(template):
     wgridder_structref, "uvw_tile_index", inline="always", jit_options=jit_options
   )
   def overload_uvw_tile_index(self, u, v, w, ch):
-    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
-    LOG2TILE = 5 if uvw_dtype == np.float32 else 4
+    LOG2TILE = self.log2tile
 
     def impl(self, u, v, w, ch):
       """Pack (tile_u, tile_v, minplane) into a uint64 uvw_tile.
@@ -459,8 +467,7 @@ def _register_wgridder_overloads(template):
 
   @overload_method(wgridder_structref, "_count_buckets", jit_options=full_jit_options)
   def overload_count_buckets(self):
-    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
-    LOG2TILE = 5 if uvw_dtype == np.float32 else 4
+    LOG2TILE = self.log2tile
 
     def impl(self):
       """4.2: allocate bucket_count histogram + Pass 1 counting."""
@@ -743,8 +750,7 @@ def _register_wgridder_overloads(template):
     wgridder_structref, "_compute_uvranges", jit_options=full_jit_options
   )
   def overload_compute_uvranges(self):
-    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
-    LOG2TILE = 5 if uvw_dtype == np.float32 else 4
+    TILESIZE = self.tilesize
 
     def impl(self):
       """4.6: compute per-w-plane u/v pixel intervals covered by the tiles."""
@@ -768,7 +774,6 @@ def _register_wgridder_overloads(template):
           tmpu[mw + k, tu] = True
           tmpv[mw + k, tv] = True
 
-      tilesize = np.int32(1 << LOG2TILE)
       half_support = np.int32(support // 2)
 
       # u-intervals: pass A counts, pass B fills
@@ -780,8 +785,8 @@ def _register_wgridder_overloads(template):
         cnt = np.int64(0)
         for j in range(ntiles_u):
           if tmpu[pl, j]:
-            lo = np.int32(j) * tilesize - half_support - 1
-            hi = np.int32(j + 1) * tilesize + half_support + 1
+            lo = np.int32(j) * TILESIZE - half_support - 1
+            hi = np.int32(j + 1) * TILESIZE + half_support + 1
             if has_prev and lo <= hi_prev:
               hi_prev = max(hi_prev, hi)
             else:
@@ -803,8 +808,8 @@ def _register_wgridder_overloads(template):
         has_prev = False
         for j in range(ntiles_u):
           if tmpu[pl, j]:
-            lo = np.int32(j) * tilesize - half_support - 1
-            hi = np.int32(j + 1) * tilesize + half_support + 1
+            lo = np.int32(j) * TILESIZE - half_support - 1
+            hi = np.int32(j + 1) * TILESIZE + half_support + 1
             if has_prev and lo <= hi_prev:
               hi_prev = max(hi_prev, hi)
             else:
@@ -828,8 +833,8 @@ def _register_wgridder_overloads(template):
         cnt = np.int64(0)
         for j in range(ntiles_v):
           if tmpv[pl, j]:
-            lo = np.int32(j) * tilesize - half_support - 1
-            hi = np.int32(j + 1) * tilesize + half_support + 1
+            lo = np.int32(j) * TILESIZE - half_support - 1
+            hi = np.int32(j + 1) * TILESIZE + half_support + 1
             if has_prev and lo <= hi_prev:
               hi_prev = max(hi_prev, hi)
             else:
@@ -851,8 +856,8 @@ def _register_wgridder_overloads(template):
         has_prev = False
         for j in range(ntiles_v):
           if tmpv[pl, j]:
-            lo = np.int32(j) * tilesize - half_support - 1
-            hi = np.int32(j + 1) * tilesize + half_support + 1
+            lo = np.int32(j) * TILESIZE - half_support - 1
+            hi = np.int32(j + 1) * TILESIZE + half_support + 1
             if has_prev and lo <= hi_prev:
               hi_prev = max(hi_prev, hi)
             else:
