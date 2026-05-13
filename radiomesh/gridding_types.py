@@ -218,7 +218,7 @@ class WGridderImplTemplate:
   @property
   def jit_options(self):
     """Base jit options, which exclude parallelisation directives"""
-    return {"nogil": True}
+    return {"error_model": "numpy", "nogil": True, "fastmath": True}
 
   @property
   def full_jit_options(self):
