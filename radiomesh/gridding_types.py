@@ -583,8 +583,7 @@ def _register_wgridder_overloads(template):
           for mw in range(nwmin):
             c = bucket_count[tu, tv, mw].count
             if c > 0:
-              idx_packed = index_from_uvw_tile(tu, tv, mw)
-              blockstart[bsi]["uvw_tile"] = idx_packed
+              blockstart[bsi]["uvw_tile"] = index_from_uvw_tile(tu, tv, mw)
               blockstart[bsi]["offset"] = acc
               bsi += 1
             # Replace count with start offset; bucket_count now acts as the
