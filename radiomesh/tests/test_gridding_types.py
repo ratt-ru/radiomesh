@@ -114,28 +114,33 @@ def test_uvw_tile_index():
 
 
 @numba.njit(parallel=True, nogil=True)
-def parallel_fn(uvw, frequencies, params, vis, weight, flag):
+def parallel_fn(uvw, frequencies, params, vis, weight, flag, nx, ny):
   impl = ParallelWGridderImpl(uvw, frequencies, params, False, False, False)
   impl.scan_data(vis, weight, flag)
+  impl.count_ranges(nx, ny)
   return impl
 
 
 @numba.njit(parallel=False, nogil=True)
-def serial_fn(uvw, frequencies, params, vis, weight, flag):
+def serial_fn(uvw, frequencies, params, vis, weight, flag, nx, ny):
   impl = WGridderImpl(uvw, frequencies, params, False, False, False)
   impl.scan_data(vis, weight, flag)
+  impl.count_ranges(nx, ny)
   return impl
+
+
+DEFAULT_NX = 128
+DEFAULT_NY = 128
+DEFAULT_PIXSIZE = 1.0 / 3600.0 * np.pi / 180.0
 
 
 def _default_params(uvw, apply_w=False, nvis=0, wmin_d=0.0, wmax_d=0.0):
   """Minimal WGridderParameters for tests that don't exercise count_ranges."""
-  nx, ny = 128, 128
-  pixsize = 1.0 / 3600.0 * np.pi / 180.0
   return estimate_gridding_parameters(
-    nx,
-    ny,
-    pixsize,
-    pixsize,
+    DEFAULT_NX,
+    DEFAULT_NY,
+    DEFAULT_PIXSIZE,
+    DEFAULT_PIXSIZE,
     epsilon=1e-6,
     apply_w=apply_w,
     single=(uvw.dtype == np.float32),
@@ -172,7 +177,9 @@ def test_wgridder_impl(parallel, grid_fn, ctx, uvw_coordinates, frequencies):
   flag = rng.integers(0, 8, size=weight.shape, dtype=np.uint8)
 
   params = _default_params(uvw_coordinates)
-  impl = grid_fn(uvw_coordinates, frequencies, params, vis, weight, flag)
+  impl = grid_fn(
+    uvw_coordinates, frequencies, params, vis, weight, flag, DEFAULT_NX, DEFAULT_NY
+  )
   with ctx:
     grid_fn.parallel_diagnostics(level=4)
 
@@ -180,7 +187,7 @@ def test_wgridder_impl(parallel, grid_fn, ctx, uvw_coordinates, frequencies):
   assert "parfor" in ir if parallel else "parfor" not in "ir"
 
   mask = (np.abs(vis) * weight * (flag != 0)) > 0.0
-  np.testing.assert_array_equal(mask, impl.mask)
+  np.testing.assert_array_equal(mask, impl.mask > 0)
   assert np.count_nonzero(mask) == impl.nvis
   np.testing.assert_array_almost_equal(frequencies / LIGHTSPEED, impl.wavelengths)
 
