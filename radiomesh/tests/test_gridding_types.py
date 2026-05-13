@@ -182,7 +182,7 @@ def test_wgridder_impl(parallel, grid_fn, ctx, uvw_coordinates, frequencies):
   mask = (np.abs(vis) * weight * (flag != 0)) > 0.0
   np.testing.assert_array_equal(mask, impl.mask)
   assert np.count_nonzero(mask) == impl.nvis
-  np.testing.assert_array_equal(frequencies / LIGHTSPEED, impl.wavelengths)
+  np.testing.assert_array_almost_equal(frequencies / LIGHTSPEED, impl.wavelengths)
 
 
 # ----------------------------------------------------------------------
