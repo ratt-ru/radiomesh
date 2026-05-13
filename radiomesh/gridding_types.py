@@ -656,10 +656,10 @@ def _register_wgridder_overloads(template):
                 # There is no active run or we're on a tile boundary
                 new_tile_index = self.uvw_tile_index(u, v, w, ch)
                 if not active:
-                  # Start an active run
-                  active = True
+                  # Flush if necessary and start an active run
                   if has_current and current_tile_index != new_tile_index:
                     flush()
+                  active = True
                   current_tile_index = new_tile_index
                   has_current = True
                   chan0 = ch
@@ -686,6 +686,7 @@ def _register_wgridder_overloads(template):
             interbuf_size += 1
 
           if interbuf_size > 0 and has_current:
+            # Flush any remaining channel runs
             flush()
 
     return impl
