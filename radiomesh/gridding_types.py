@@ -625,9 +625,9 @@ def _register_wgridder_overloads(template):
           chan0 = 0  # First channel of the run
           active = False  # Is this an active run
 
-          def flush(interbuf_size):
-            """Flush the discovered channel runs
-            in interbuf into ranges"""
+          def flush():
+            """Flush the discovered channel runs from interbuf into ranges"""
+            nonlocal interbuf_size
             tu, tv, mw = uvw_tile_from_index(current_tile_index)
             slot = (
               bucket_count.item_ptr(tu, tv, mw)
@@ -639,7 +639,7 @@ def _register_wgridder_overloads(template):
               ranges[slot + i].bl = numba.uint32(bl)
               ranges[slot + i].ch_begin = numba.uint16(interbuf[i, 0])
               ranges[slot + i].ch_end = numba.uint16(interbuf[i, 1])
-            return 0
+            interbuf_size = 0
 
           for ch in range(nchan):
             xmask = self.mask[t, bl, ch]
@@ -652,7 +652,7 @@ def _register_wgridder_overloads(template):
                   # Start an active run
                   active = True
                   if has_current and current_tile_index != new_tile_index:
-                    interbuf_size = flush(interbuf_size)
+                    flush()
                   current_tile_index = new_tile_index
                   has_current = True
                   chan0 = ch
@@ -661,7 +661,7 @@ def _register_wgridder_overloads(template):
                   interbuf[interbuf_size, 0] = chan0
                   interbuf[interbuf_size, 1] = ch
                   interbuf_size += 1
-                  interbuf_size = flush(interbuf_size)
+                  flush()
                   current_tile_index = new_tile_index
                   chan0 = ch
             else:
@@ -679,7 +679,7 @@ def _register_wgridder_overloads(template):
             interbuf_size += 1
 
           if interbuf_size > 0 and has_current:
-            interbuf_size = flush(interbuf_size)
+            flush()
 
     return impl
 
