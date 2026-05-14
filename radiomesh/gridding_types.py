@@ -508,6 +508,7 @@ def _register_wgridder_overloads(template):
 
           ch0 = 0
           while ch0 < nchan:
+            # Identity starting and ending ranges of a run of channels
             while ch0 < nchan and self.mask[t, bl, ch0] == CHANNEL_EMPTY:
               ch0 += 1
             if ch0 >= nchan:
@@ -516,10 +517,14 @@ def _register_wgridder_overloads(template):
             while ch1 < nchan and self.mask[t, bl, ch1] != CHANNEL_EMPTY:
               ch1 += 1
 
+            # There's a SampleChanRange in the first tile
             tile_index0 = self.uvw_tile_index(u, v, w, ch0)
             tu0, tv0, mw0 = uvw_tile_from_index(tile_index0)
             bucket_count.item_ptr(tu0, tv0, mw0).field_ptr("count").atomic_rmw("add", 1)
 
+            # uvw_tile_index is relatively expensive to compute in this context
+            # A binary search strategy is used to identify tiles occupied
+            # by the channel run
             if ch0 + 1 < ch1:
               tile_index_last = self.uvw_tile_index(u, v, w, ch1 - 1)
               stack_size = 0
@@ -537,6 +542,8 @@ def _register_wgridder_overloads(template):
                 tile_index_hi = stack_buf[stack_size, 3]
                 if ch_lo + 1 == ch_hi:
                   if tile_index_lo != tile_index_hi:
+                    # Straddles a tile boundary. Mark the SampleChanRange in the
+                    # upper tile as well as the boundary in the mask
                     tu, tv, mw = uvw_tile_from_index(tile_index_hi)
                     bucket_count.item_ptr(tu, tv, mw).field_ptr("count").atomic_rmw(
                       "add", 1
