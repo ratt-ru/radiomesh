@@ -4,7 +4,12 @@ import numba
 import numpy as np
 from numba import types
 from numba.experimental import structref
-from numba.extending import overload, overload_method, register_jitable
+from numba.extending import (
+  overload,
+  overload_attribute,
+  overload_method,
+  register_jitable,
+)
 
 from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
 from radiomesh.numba_utils import make_structref_property
@@ -390,3 +395,8 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             out[offset] = value
 
   return impl
+
+
+@overload_attribute(ESKernelStructRef, "nsafe")
+def overload_es_kernel_nsafe(self):
+  return lambda self: (self.support + 1) // 2
