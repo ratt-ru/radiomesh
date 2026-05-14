@@ -254,7 +254,7 @@ def _register_wgridder_overloads(template):
   full_jit_options = template.full_jit_options
 
   @overload(wgridder_type, jit_options=full_jit_options)
-  def overload_gridding_impl(
+  def overload_wgridder_constructor(
     uvw, frequencies, wgrid_params, invert_u, invert_v, invert_w
   ):
     struct_type = wgridder_structref(
@@ -346,6 +346,82 @@ def _register_wgridder_overloads(template):
       return obj
 
     return impl
+
+  @overload_method(wgridder_structref, "scan_data", jit_options=full_jit_options)
+  def overload_scan_data(self, visibilities, weight, flag):
+    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
+    uvw_finfo = np.finfo(uvw_dtype)
+    UVW_MIN = uvw_finfo.min
+    UVW_MAX = uvw_finfo.max
+
+    def impl(self, visibilities, weight, flag):
+      ntime = self.ntime
+      nbl = self.nbl
+      nchan = self.nchan
+
+      mask = np.zeros((ntime, nbl, nchan), np.uint8)
+      nvis = 0
+      wmin_d = UVW_MAX
+      wmax_d = UVW_MIN
+
+      for t in numba.prange(ntime):
+        for bl in numba.prange(nbl):
+          for ch in range(nchan):
+            v = visibilities[t, bl, ch]
+            if (v.real**2 + v.imag**2) * weight[t, bl, ch] * (flag[t, bl, ch]) != 0:
+              mask[t, bl, ch] = CHANNEL_FILLED
+              nvis += 1
+              w = self.effective_abs_w(t, bl, ch)
+              wmin_d = min(wmin_d, w)
+              wmax_d = max(wmax_d, w)
+
+      self.mask = mask
+      self.nvis = nvis
+      self.w_min_d = wmin_d
+      self.w_max_d = wmax_d
+
+    return impl
+
+  # ------------------------------------------------------------------
+  # Simple method and attribute overloads
+  # ------------------------------------------------------------------
+  @overload_attribute(wgridder_structref, "ntime", jit_options=jit_options)
+  def overload_ntime(self):
+    return lambda self: self.uvw.shape[0]
+
+  @overload_attribute(wgridder_structref, "nbl", jit_options=jit_options)
+  def overload_nbl(self):
+    return lambda self: self.uvw.shape[1]
+
+  @overload_attribute(wgridder_structref, "nchan", jit_options=jit_options)
+  def overload_nchan(self):
+    return lambda self: self.wavelengths.shape[0]
+
+  @overload_method(wgridder_structref, "effective_uvw", jit_options=jit_options)
+  def overload_effective_uvw(self, t, bl, ch):
+    def impl(self, t, bl, ch):
+      return (
+        self.uvw[t, bl, 0] * self.wavelengths[ch],
+        self.uvw[t, bl, 1] * self.wavelengths[ch],
+        self.uvw[t, bl, 2] * self.wavelengths[ch],
+      )
+
+    return impl
+
+  @overload_method(wgridder_structref, "effective_abs_w", jit_options=jit_options)
+  def overload_effective_abs_w(self, t, bl, ch):
+    return lambda self, t, bl, ch: abs(self.uvw[t, bl, 2] * self.wavelengths[ch])
+
+  @overload_method(wgridder_structref, "base_uvw", jit_options=jit_options)
+  def overload_base_uvw(self, t, bl):
+    def impl(self, t, bl):
+      return self.uvw[t, bl, 0], self.uvw[t, bl, 1], self.uvw[t, bl, 2]
+
+    return impl
+
+  @overload_method(wgridder_structref, "wavelength", jit_options=jit_options)
+  def overload_wavelength(self, ch):
+    return lambda self, ch: self.wavelengths[ch]
 
   # ------------------------------------------------------------------
   # Attributes delegated to wgrid_params / kernel
@@ -893,83 +969,6 @@ def _register_wgridder_overloads(template):
       self._compute_uvranges()
 
     return impl
-
-  @overload_method(wgridder_structref, "scan_data", jit_options=full_jit_options)
-  def overload_scan_data(self, visibilities, weight, flag):
-    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
-    uvw_finfo = np.finfo(uvw_dtype)
-    UVW_MIN = uvw_finfo.min
-    UVW_MAX = uvw_finfo.max
-
-    def impl(self, visibilities, weight, flag):
-      ntime = self.ntime
-      nbl = self.nbl
-      nchan = self.nchan
-
-      mask = np.zeros((ntime, nbl, nchan), np.uint8)
-      nvis = 0
-      wmin_d = UVW_MAX
-      wmax_d = UVW_MIN
-
-      for t in numba.prange(ntime):
-        for bl in numba.prange(nbl):
-          for ch in range(nchan):
-            v = visibilities[t, bl, ch]
-            if (v.real**2 + v.imag**2) * weight[t, bl, ch] * (flag[t, bl, ch]) != 0:
-              mask[t, bl, ch] = CHANNEL_FILLED
-              nvis += 1
-              w = self.effective_abs_w(t, bl, ch)
-              wmin_d = min(wmin_d, w)
-              wmax_d = max(wmax_d, w)
-
-      self.mask = mask
-      self.nvis = nvis
-      self.w_min_d = wmin_d
-      self.w_max_d = wmax_d
-
-    return impl
-
-  @overload_method(wgridder_structref, "max_uv", jit_options=jit_options)
-  def overload_max_uv(self):
-    return lambda self: max(self.u_max, self.v_max)
-
-  @overload_attribute(wgridder_structref, "ntime", jit_options=jit_options)
-  def overload_ntime(self):
-    return lambda self: self.uvw.shape[0]
-
-  @overload_attribute(wgridder_structref, "nbl", jit_options=jit_options)
-  def overload_nbl(self):
-    return lambda self: self.uvw.shape[1]
-
-  @overload_attribute(wgridder_structref, "nchan", jit_options=jit_options)
-  def overload_nchan(self):
-    return lambda self: self.wavelengths.shape[0]
-
-  @overload_method(wgridder_structref, "effective_uvw", jit_options=jit_options)
-  def overload_effective_uvw(self, t, bl, ch):
-    def impl(self, t, bl, ch):
-      return (
-        self.uvw[t, bl, 0] * self.wavelengths[ch],
-        self.uvw[t, bl, 1] * self.wavelengths[ch],
-        self.uvw[t, bl, 2] * self.wavelengths[ch],
-      )
-
-    return impl
-
-  @overload_method(wgridder_structref, "effective_abs_w", jit_options=jit_options)
-  def overload_effective_abs_w(self, t, bl, ch):
-    return lambda self, t, bl, ch: abs(self.uvw[t, bl, 2] * self.wavelengths[ch])
-
-  @overload_method(wgridder_structref, "base_uvw", jit_options=jit_options)
-  def overload_base_uvw(self, t, bl):
-    def impl(self, t, bl):
-      return self.uvw[t, bl, 0], self.uvw[t, bl, 1], self.uvw[t, bl, 2]
-
-    return impl
-
-  @overload_method(wgridder_structref, "wavelength", jit_options=jit_options)
-  def overload_wavelength(self, ch):
-    return lambda self, ch: self.wavelengths[ch]
 
 
 for template in WGRIDDER_TEMPLATES:
