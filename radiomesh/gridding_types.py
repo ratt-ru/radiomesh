@@ -76,27 +76,27 @@ def index_from_uvw_tile(u_tile, v_tile, w_tile):
   return index
 
 
-@register_jitable
+@register_jitable(inline="always")
 def u_tile_from_index(index):
   return (index & U_TILE_MASK) >> U_TILE_BIT_OFFSET
 
 
-@register_jitable
+@register_jitable(inline="always")
 def v_tile_from_index(index):
   return (index & V_TILE_MASK) >> V_TILE_BIT_OFFSET
 
 
-@register_jitable
+@register_jitable(inline="always")
 def w_tile_from_index(index):
   return (index & W_TILE_MASK) >> W_TILE_BIT_OFFSET
 
 
-@register_jitable
+@register_jitable(inline="always")
 def uvw_tile_from_index(index):
   return (u_tile_from_index(index), v_tile_from_index(index), w_tile_from_index(index))
 
 
-@register_jitable
+@register_jitable(inline="always")
 def fix_w(u, v, w):
   """Conjugation-symmetric fix: if w < 0, negate all three UVW components.
 
@@ -109,7 +109,7 @@ def fix_w(u, v, w):
   return u, v, w, 1.0
 
 
-@register_jitable
+@register_jitable(inline="always")
 def _count_wrapped(lo, hi, n):
   """Count how many sub-intervals [lo, hi) produces once clipped into [0, n)
   with periodic wraparound. Result is either 1 or 2."""
@@ -123,7 +123,7 @@ def _count_wrapped(lo, hi, n):
   return np.int64(1)
 
 
-@register_jitable
+@register_jitable(inline="always")
 def _emit_wrapped(out, write, lo, hi, n):
   """Emit wrapped interval(s) for [lo, hi) into `out` starting at `write`.
   Returns the new write index."""
