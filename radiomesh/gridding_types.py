@@ -619,34 +619,34 @@ def _register_wgridder_overloads(template):
 
       for t in numba.prange(ntime):
         # Local buffer of channel ranges
-        interbuf = np.empty((nchan + 1, 2), dtype=np.int32)
+        chan_ranges = np.empty((nchan + 1, 2), dtype=np.int32)
         for bl in range(nbl):
           u_raw = self.uvw[t, bl, 0]
           v_raw = self.uvw[t, bl, 1]
           w_raw = self.uvw[t, bl, 2]
           u, v, w, _ = fix_w(u_raw, v_raw, w_raw)
 
-          interbuf_size = 0  # Channel range buffer size
+          nchan_ranges = 0  # Channel range buffer size
           current_tile_index = index_from_uvw_tile(0, 0, 0)  # Default value
           has_current = False  # Is current_tile_index initialised
           chan0 = 0  # First channel of the run
           active = False  # Is this an active run
 
-          def flush():
-            """Flush the discovered channel runs from interbuf into ranges"""
-            nonlocal interbuf_size
+          def flush_chan_ranges():
+            """Flush discovered channel runs from chan_ranges into ranges"""
+            nonlocal nchan_ranges
             tu, tv, mw = uvw_tile_from_index(current_tile_index)
             slot = (
               bucket_count.item_ptr(tu, tv, mw)
               .field_ptr("count")
-              .atomic_rmw("add", interbuf_size)
+              .atomic_rmw("add", nchan_ranges)
             )
-            for i in range(interbuf_size):
+            for i in range(nchan_ranges):
               ranges[slot + i].time = numba.uint32(t)
               ranges[slot + i].bl = numba.uint32(bl)
-              ranges[slot + i].ch_begin = numba.uint16(interbuf[i, 0])
-              ranges[slot + i].ch_end = numba.uint16(interbuf[i, 1])
-            interbuf_size = 0
+              ranges[slot + i].ch_begin = numba.uint16(chan_ranges[i, 0])
+              ranges[slot + i].ch_end = numba.uint16(chan_ranges[i, 1])
+            nchan_ranges = 0
 
           for ch in range(nchan):
             xmask = self.mask[t, bl, ch]
@@ -658,36 +658,36 @@ def _register_wgridder_overloads(template):
                 if not active:
                   # Flush if necessary and start an active run
                   if has_current and current_tile_index != new_tile_index:
-                    flush()
+                    flush_chan_ranges()
                   active = True
                   current_tile_index = new_tile_index
                   has_current = True
                   chan0 = ch
                 elif current_tile_index != new_tile_index:
                   # tile boundary mid-run
-                  interbuf[interbuf_size, 0] = chan0
-                  interbuf[interbuf_size, 1] = ch
-                  interbuf_size += 1
-                  flush()
+                  chan_ranges[nchan_ranges, 0] = chan0
+                  chan_ranges[nchan_ranges, 1] = ch
+                  nchan_ranges += 1
+                  flush_chan_ranges()
                   current_tile_index = new_tile_index
                   chan0 = ch
             else:
               # Inactive channel, complete any active channel run
               if active:
-                interbuf[interbuf_size, 0] = chan0
-                interbuf[interbuf_size, 1] = ch
-                interbuf_size += 1
+                chan_ranges[nchan_ranges, 0] = chan0
+                chan_ranges[nchan_ranges, 1] = ch
+                nchan_ranges += 1
                 active = False
 
           if active:
             # Complete any active channel runs
-            interbuf[interbuf_size, 0] = chan0
-            interbuf[interbuf_size, 1] = nchan
-            interbuf_size += 1
+            chan_ranges[nchan_ranges, 0] = chan0
+            chan_ranges[nchan_ranges, 1] = nchan
+            nchan_ranges += 1
 
-          if interbuf_size > 0 and has_current:
+          if nchan_ranges > 0 and has_current:
             # Flush any remaining channel runs
-            flush()
+            flush_chan_ranges()
 
     return impl
 
