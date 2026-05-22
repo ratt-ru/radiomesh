@@ -305,7 +305,7 @@ def test_count_ranges_totals_and_invariants(
   # [offset_i, offset_{i+1}). We re-derive each channel's uvw_tile by calling the
   # jit method on the impl itself — it encapsulates all geometry.
   offsets = blockstart["offset"].astype(np.int64)
-  uvw_tiles = blockstart["uvw_tile"].astype(np.uint64)
+  uvw_tiles = blockstart["uvw_tile_index"].astype(np.uint64)
   for i in range(len(blockstart)):
     start = offsets[i]
     end = offsets[i + 1] if i + 1 < len(blockstart) else len(ranges)
@@ -357,8 +357,8 @@ def test_count_ranges_serial_parallel_equivalent(apply_w, uvw_coordinates, frequ
   # Same set of *unique* uvw_tile buckets (blockstart[] may be longer on one
   # side due to subdivision, but unique keys must match).
   np.testing.assert_array_equal(
-    np.unique(impl_p.blockstart["uvw_tile"]),
-    np.unique(impl_s.blockstart["uvw_tile"]),
+    np.unique(impl_p.blockstart["uvw_tile_index"]),
+    np.unique(impl_s.blockstart["uvw_tile_index"]),
   )
 
   # Same mask (pass-1 sets mask=2 at tile boundaries — this is deterministic).
@@ -412,7 +412,7 @@ def test_count_ranges_uranges_cover_blockstart(uvw_coordinates, frequencies):
   vranges = impl.vranges
 
   for entry in impl.blockstart:
-    tu, tv, mp = uvw_tile_from_index(int(entry["uvw_tile"]))
+    tu, tv, mp = uvw_tile_from_index(int(entry["uvw_tile_index"]))
     lo_u = int(tu) * tilesize - nsafe
     hi_u = (int(tu) + 1) * tilesize + nsafe
     lo_v = int(tv) * tilesize - nsafe

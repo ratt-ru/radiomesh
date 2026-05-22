@@ -34,10 +34,10 @@ SampleChanRange = types.Record(
   aligned=True,
 )
 
-# (uvw_tile packed into uint64, offset into ranges[])
+# (uvw_tile_index packed into uint64, offset into ranges[])
 BlockStartEntry = types.Record(
   [
-    ("uvw_tile", {"type": types.uint64, "offset": 0}),
+    ("uvw_tile_index", {"type": types.uint64, "offset": 0}),
     ("offset", {"type": types.int64, "offset": 8}),
   ],
   size=16,
@@ -677,8 +677,8 @@ def _register_wgridder_overloads(template):
           for mw in range(nwmin):
             c = bucket_count[tu, tv, mw].count
             if c > 0:
-              blockstart[bsi]["uvw_tile"] = index_from_uvw_tile(tu, tv, mw)
-              blockstart[bsi]["offset"] = acc
+              blockstart[bsi].uvw_tile_index = index_from_uvw_tile(tu, tv, mw)
+              blockstart[bsi].offset = acc
               bsi += 1
             # Replace count with start offset; bucket_count now acts as the
             # atomic slot-allocator for Pass 2.
@@ -797,11 +797,11 @@ def _register_wgridder_overloads(template):
       new_size = 0
       for i in range(n_nonempty):
         new_size += 1
-        r_start = blockstart[i]["offset"]
-        r_end = blockstart[i + 1]["offset"] if i + 1 < n_nonempty else total_ranges
+        r_start = blockstart[i].offset
+        r_end = blockstart[i + 1].offset if i + 1 < n_nonempty else total_ranges
         acc2 = np.int64(0)
         for j in range(r_start + 1, r_end):
-          acc2 += ranges[j]["ch_end"] - ranges[j]["ch_begin"]
+          acc2 += ranges[j].ch_end - ranges[j].ch_begin
           if acc2 > max_allowed:
             new_size += 1
             acc2 = 0
@@ -811,18 +811,18 @@ def _register_wgridder_overloads(template):
       # Pass B: fill
       bsi2 = 0
       for i in range(n_nonempty):
-        uvw_tile_i = blockstart[i]["uvw_tile"]
-        r_start = blockstart[i]["offset"]
-        new_blockstart[bsi2]["uvw_tile"] = uvw_tile_i
-        new_blockstart[bsi2]["offset"] = r_start
+        uvw_tile_i = blockstart[i].uvw_tile_index
+        r_start = blockstart[i].offset
+        new_blockstart[bsi2].uvw_tile_index = uvw_tile_i
+        new_blockstart[bsi2].offset = r_start
         bsi2 += 1
-        r_end = blockstart[i + 1]["offset"] if i + 1 < n_nonempty else total_ranges
+        r_end = blockstart[i + 1].offset if i + 1 < n_nonempty else total_ranges
         acc2 = np.int64(0)
         for j in range(r_start + 1, r_end):
-          acc2 += ranges[j]["ch_end"] - ranges[j]["ch_begin"]
+          acc2 += ranges[j].ch_end - ranges[j].ch_begin
           if acc2 > max_allowed:
-            new_blockstart[bsi2]["uvw_tile"] = uvw_tile_i
-            new_blockstart[bsi2]["offset"] = j
+            new_blockstart[bsi2].uvw_tile_index = uvw_tile_i
+            new_blockstart[bsi2].offset = j
             bsi2 += 1
             acc2 = 0
 
