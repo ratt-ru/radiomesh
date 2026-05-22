@@ -852,7 +852,7 @@ def _register_wgridder_overloads(template):
       tmpv = np.zeros((nw_i, ntiles_v + 1), dtype=np.bool_)
 
       for bi in range(new_size):
-        tu, tv, mw = uvw_tile_from_index(blockstart[bi]["uvw_tile"])
+        tu, tv, mw = uvw_tile_from_index(blockstart[bi].uvw_tile_index)
         span = support if apply_w else np.int64(1)
         for k in range(span):
           tmpu[mw + k, tu] = True
