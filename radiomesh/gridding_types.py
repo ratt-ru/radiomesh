@@ -44,6 +44,7 @@ BlockStartEntry = types.Record(
   aligned=True,
 )
 
+BASE_JIT_OPTIONS = {"error_model": "numpy", "nogil": True, "fastmath": True}
 COUNTER_DTYPE = as_struct_dtype(CachedAlignedCounter)
 SAMPLE_CHANRANGE_DTYPE = as_struct_dtype(SampleChanRange)
 BLOCK_START_DTYPE = as_struct_dtype(BlockStartEntry)
@@ -149,6 +150,73 @@ def _emit_wrapped(out, write, lo, hi, n):
 
 
 @structref.register
+class GriddingTileBufferStructRef(StructRef):
+  def preprocess_fields(self, fields):
+    """Disallow literal types in field definitions"""
+    return tuple((n, types.unliteral(t)) for n, t in fields)
+
+
+class GriddingTileBuffer(structref.StructRefProxy):
+  pass
+
+
+@overload(GriddingTileBuffer, jit_options=BASE_JIT_OPTIONS)
+def overload_wgridder_constructor(
+  grid, nu_locks, wplane, dw, safe_u, safe_v, u_kernel, v_kernel
+):
+  BUFFER_DTYPE = grid.dtype.underlying_float
+
+  index_type = types.int64
+  index_dtype = as_dtype(index_type)
+  SENTINEL = np.iinfo(index_dtype).min
+
+  struct_type = GriddingTileBufferStructRef(
+    [
+      # Reference to the complex (nu x nv) grid
+      ("grid", grid),
+      # nu row locks
+      ("nu_locks", nu_locks),
+      # wplane undergoing gridding
+      ("wplane", wplane),
+      # wplane spacing
+      ("dw", dw),
+      # Kernel buffers
+      ("u_kernel", u_kernel),
+      ("v_kernel", v_kernel),
+      # real buffer
+      ("real_buffer", BUFFER_DTYPE),
+      # imag buffer
+      ("imag_buffer", BUFFER_DTYPE),
+      # buffer's window position within the grid
+      # Top-left corner in pixel coordinates
+      ("bu0", index_type),
+      ("bv0", index_type),
+      # Visibility's kernel start pixel
+      ("iu0", index_type),
+      ("iv0", index_type),
+    ]
+  )
+
+  def impl(grid, nu_locks, wplane, dw, safe_u, safe_v, u_kernel, v_kernel):
+    obj = structref.new(struct_type)
+    obj.grid = grid
+    obj.nu_locks = nu_locks
+    obj.wplane = wplane
+    obj.dw = dw
+    obj.u_kernel = u_kernel
+    obj.v_kernel = v_kernel
+    obj.real_buffer = np.empty((safe_u, safe_v), BUFFER_DTYPE)
+    obj.imag_buffer = np.empty((safe_u, safe_v), BUFFER_DTYPE)
+    obj.bu0 = SENTINEL
+    obj.bv0 = SENTINEL
+    obj.iu0 = SENTINEL
+    obj.iv0 = SENTINEL
+    return obj
+
+  return impl
+
+
+@structref.register
 class WGridderImplStructRef(StructRef):
   def preprocess_fields(self, fields):
     """Disallow literal types in field definitions"""
@@ -231,7 +299,7 @@ class WGridderImplTemplate:
   @property
   def jit_options(self):
     """Base jit options, which exclude parallelisation directives"""
-    return {"error_model": "numpy", "nogil": True, "fastmath": True}
+    return BASE_JIT_OPTIONS
 
   @property
   def full_jit_options(self):
@@ -967,6 +1035,75 @@ def _register_wgridder_overloads(template):
       self._fill_ranges()
       self._subdivide_blockstart()
       self._compute_uvranges()
+
+    return impl
+
+  @overload_method(wgridder_structref, "x2dirty", jit_options=full_jit_options)
+  def overload_x2dirty(self, visibilities, nx, ny):
+    def impl(self, visibilities, nx, ny):
+      grid = np.zeros((self.nu, self.nv), visibilities.dtype)
+      dirty = np.zeros((nx, ny))
+
+      if self.apply_w:
+        for wplane in range(self.nw):
+          w = self.w_min_d + wplane * self.dw
+          self.x2grid_c(grid, visibilities, wplane, w)
+      else:
+        self.x2grid_c(grid, visibilities, 0, self.w_min_d)
+
+      return dirty
+
+    return impl
+
+  @overload_method(wgridder_structref, "x2grid_c", jit_options=full_jit_options)
+  def overload_x2grid_c(self, grid, visibilities, wplane, w):
+    from numba.typed import List
+
+    TILESIZE = self.tilesize
+
+    def impl(self, grid, visibilities, wplane, w):
+      locks = np.full(self.nu, 0, np.int32)
+      nblocks = len(self.blockstart)
+      kernel = self.wgrid_params.kernel
+      safe_u = safe_v = 2 * self.nsafe + TILESIZE
+
+      # Allocate per thread tile helpers
+      nthreads = numba.get_num_threads()
+      tiled_helpers = List()
+      for _ in range(nthreads):
+        u_kernel = kernel.allocate_taps()
+        v_kernel = kernel.allocate_taps()
+        tiled_helpers.append(
+          GriddingTileBuffer(
+            grid, locks, wplane, self.dw, safe_u, safe_v, u_kernel, v_kernel
+          )
+        )
+
+      for block in numba.prange(nblocks):
+        tiler_helper = tiled_helpers[numba.get_thread_id()]  # noqa: F841
+        uvw_tile = self.blockstart[block].uvw_tile_index
+        mw = w_tile_from_index(uvw_tile)
+
+        # Skip this block it it doesn't contribute
+        # to the current w plane
+        if self.apply_w and not (mw <= wplane < mw + self.support):
+          continue
+
+        range_start = self.blockstart[block].offset
+        last_block = block + 1 >= nblocks
+        range_end = (
+          len(self.ranges) if last_block else self.blockstart[block + 1].offset
+        )
+
+        for range_i in range(range_start, range_end):
+          sample_chan_range = self.ranges[range_i]
+
+          for ch in range(sample_chan_range.ch_begin, sample_chan_range.ch_end):
+            u, v, w = self.base_uvw(sample_chan_range.time, sample_chan_range.bl)
+            u, v, w, invert_imaginary = fix_w(u, v, w)
+            u *= self.wavelengths[ch]
+            v *= self.wavelengths[ch]
+            w *= self.wavelengths[ch]
 
     return impl
 

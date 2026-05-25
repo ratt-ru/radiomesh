@@ -429,3 +429,21 @@ def test_count_ranges_uranges_cover_blockstart(uvw_coordinates, frequencies):
         f"vranges plane {pl} does not cover tile_v {tv}: need [{lo_v}, {hi_v}) "
         f"got {v_ivs.tolist()}"
       )
+
+
+@numba.njit(parallel=True, nogil=True)
+def parallel_x2dirty(uvw, frequencies, vis, weight, flag, params, px, py, nx, ny):
+  impl = ParallelWGridderImpl(uvw, frequencies, params, False, False, False)
+  # impl.scan_data(vis, weight, flag)
+  # impl.count_ranges(px, py)
+  impl.x2dirty(vis, nx, ny)
+  return impl
+
+
+@pytest.mark.parametrize("apply_w", [True, False])
+def test_x2dirty(uvw_coordinates, frequencies, apply_w):
+  (uvw, freqs, vis, weight, flag, params, nx, ny, px, py, wmin_d, wmax_d) = (
+    _build_gridded_impl(uvw_coordinates, frequencies, apply_w)
+  )
+
+  dirty = parallel_x2dirty(uvw, freqs, vis, weight, flag, params, px, py, nx, ny)  # noqa: F841
