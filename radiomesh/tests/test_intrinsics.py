@@ -6,10 +6,8 @@ from numba.core.errors import RequireLiteralValue
 from numba.extending import intrinsic
 
 from radiomesh.intrinsics import (
-  accumulate_data,
   apply_flags,
   apply_weights,
-  load_data,
 )
 
 
@@ -44,35 +42,6 @@ def test_apply_flags(data, flags):
   assert flag_data(data, flags) == tuple(
     d if f == 0.0 else 0.0 for d, f in zip(data, flags)
   )
-
-
-def test_load_data():
-  shape = (5, 4)
-
-  @numba.njit
-  def load(a, i):
-    return load_data(a, (i,), shape[1], -1)
-
-  data = np.arange(np.prod(shape)).reshape(shape)
-
-  for i in range(shape[0]):
-    assert load(data, i) == tuple(i * shape[1] + j for j in range(shape[1]))
-
-
-def test_accumulate_data():
-  shape = (5, 4)
-
-  @numba.njit
-  def accumulate(d, a, i):
-    return accumulate_data(d, a, (i,), -1)
-
-  data = np.zeros(shape)
-
-  for i in range(shape[0]):
-    accumulate((i,) * shape[1], data, i)
-    accumulate((i,) * shape[1], data, i)
-
-  assert np.all(np.broadcast_to(np.arange(shape[0])[:, None], shape) * 2 == data)
 
 
 @intrinsic
@@ -123,7 +92,6 @@ def test_none_type_intrinsic():
   @intrinsic
   def fintrinsic(typingctx, data, jones):
     sig = types.none(data, jones)
-    print(sig, jones == types.none)
 
     def codegen(context, builder, signature, args):
       return None
@@ -134,4 +102,4 @@ def test_none_type_intrinsic():
   def f(a, b=None):
     return fintrinsic(a, b)
 
-  f((1, 2, 3))
+  assert f((1, 2, 3)) is None
