@@ -101,6 +101,12 @@ def generate_poly_coeffs(support, beta, e0, degree):
   return coeff
 
 
+@register_jitable(inline="always")
+def polynomial_degree(support: int) -> int:
+  """Returns an even polynomial degree, given the kernel support"""
+  return support + 3 + (support & 1)
+
+
 @structref.register
 class ESKernelStructRef(LiteralStructRef):
   """ESKernel StructRef"""
@@ -216,7 +222,8 @@ def overload_es_kernel(
       instance.support = support
 
     if not ANALYTIC:
-      instance.coeffs = generate_poly_coeffs(support, beta, e0, support + 3)
+      degree = polynomial_degree(support)
+      instance.coeffs = generate_poly_coeffs(support, beta, e0, degree)
 
     return instance
 
@@ -383,6 +390,28 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             for i in range(1, self.coeffs.shape[0]):
               value = value * locx + self.coeffs[i, nth]
             out[offset] = value
+
+  return impl
+
+
+@overload_method(ESKernelStructRef, "evaluate_support_2d_scalar")
+def overload_evaluate_support_2d_scalar(self, x, y, z, nth, result):
+  if isinstance(self.get_literal("support"), int):
+    raise NotImplementedError
+
+  def impl(self, x, y, z, nth, result):
+    for SUPPORT in numba.literal_unroll(range(4, 16)):
+      if self.support == SUPPORT:
+        HALF = (polynomial_degree(SUPPORT) + 1) // 2
+        if nth >= (SUPPORT + 1) // 2:
+          z = -z
+          nth = SUPPORT - nth - 1
+
+        x2 = x * x
+        y2 = y * y
+        z2 = z * z
+
+    pass
 
   return impl
 

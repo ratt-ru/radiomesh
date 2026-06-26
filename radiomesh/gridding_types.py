@@ -1065,6 +1065,7 @@ def _register_wgridder_overloads(template):
       locks = np.full(self.nu, 0, np.int32)
       nblocks = len(self.blockstart)
       kernel = self.wgrid_params.kernel
+      support = kernel.support
       safe_u = safe_v = 2 * self.nsafe + TILESIZE
 
       # Allocate per thread tile helpers
@@ -1089,21 +1090,28 @@ def _register_wgridder_overloads(template):
         if self.apply_w and not (mw <= wplane < mw + self.support):
           continue
 
+        w_index = wplane - mw
         range_start = self.blockstart[block].offset
-        last_block = block + 1 >= nblocks
+        next_block = block + 1
         range_end = (
-          len(self.ranges) if last_block else self.blockstart[block + 1].offset
+          len(self.ranges)
+          if next_block >= nblocks
+          else self.blockstart[next_block].offset
         )
 
         for range_i in range(range_start, range_end):
           sample_chan_range = self.ranges[range_i]
+          u, v, w = self.base_uvw(sample_chan_range.time, sample_chan_range.bl)
+          u, v, w, invert_imaginary = fix_w(u, v, w)
 
           for ch in range(sample_chan_range.ch_begin, sample_chan_range.ch_end):
-            u, v, w = self.base_uvw(sample_chan_range.time, sample_chan_range.bl)
-            u, v, w, invert_imaginary = fix_w(u, v, w)
-            u *= self.wavelengths[ch]
-            v *= self.wavelengths[ch]
-            w *= self.wavelengths[ch]
+            u_scaled = u * self.wavelengths[ch]
+            v_scaled = v * self.wavelengths[ch]
+            w_scaled = w * self.wavelengths[ch]
+
+            u_fraction, v_fraction, iu0, uv0 = self.uv_pixels(u_scaled, v_scaled)
+            x0 = -u_fraction * 2 + (support - 1)
+            y0 = -v_fraction * 2 + (support - 1)
 
     return impl
 
