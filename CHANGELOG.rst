@@ -5,6 +5,8 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Extract general-purpose numba intrinsics, literals, and concurrency primitives
+  into ``rarg-numba-patterns`` (:pr:`82`)
 * Replace ESKernel dataclass with a StructRef ESKernel (:pr:`78`)
 * Add ``w{min,max}`` and ``nw`` to WGridderParameters (:pr:`77`)
 * Implement Heuristic Determination of Gridding Parameters (:pr:`75`)
