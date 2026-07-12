@@ -28,6 +28,9 @@ WEIGHT_ARGUMENTS = ["w00", "w01", "w10", "w11"]
 VIS_ARGUMENTS = ["v00", "v01", "v10", "v11"]
 WEIGHT_FN_ARGUMENTS = WEIGHT_ARGUMENTS + JONES_P_ARGUMENTS + JONES_Q_ARGUMENTS
 VIS_FN_ARGUMENTS = VIS_ARGUMENTS + JONES_P_ARGUMENTS + JONES_Q_ARGUMENTS
+DIAG_JONES_ARGUMENTS = ["jp00", "jp11", "jq00", "jq11"]
+DIAG_WEIGHT_FN_ARGUMENTS = WEIGHT_ARGUMENTS + DIAG_JONES_ARGUMENTS
+DIAG_VIS_FN_ARGUMENTS = VIS_ARGUMENTS + DIAG_JONES_ARGUMENTS
 
 
 def sympy_expressions(
@@ -165,6 +168,48 @@ def generate_expression(args: Namespace):
       conv_fns[key] = fn_name
       lines.append(f"def {fn_name}({', '.join(WEIGHT_ARGUMENTS)}):\n")
       lines.append(f"  return ({subs_sympy(wgt_nojones)}).real\n")
+      lines.append("\n")
+
+    # Diagonal-jones variants: substitute off-diagonal jones terms to zero
+    # before simplification. Required by pfb-imaging's weight_data (diag
+    # jones path) and by the minvar weights, which cannot be derived from
+    # the full-jones expressions (Min over expansion terms would select
+    # the structurally-zero cross terms).
+    jp01, jp10 = sympy.symbols("jp01 jp10", real=False)
+    jq01, jq10 = sympy.symbols("jq01 jq10", real=False)
+    diag_subs = {jp01: 0, jp10: 0, jq01: 0, jq10: 0}
+    _, coh_full, wgt_full, _, _ = sympy_expressions(pol_type)
+    coh_diag = sympy.simplify(coh_full.subs(diag_subs))
+    wgt_diag = sympy.simplify(wgt_full.subs(diag_subs))
+
+    for stokes, coh in zip(stokes_schema, coh_diag):
+      fn_name = f"{pol_type.upper()}_VIS_DIAGJONES_{stokes.upper()}"
+      key = ("VIS", pol_type.upper(), "DIAGJONES", stokes.upper())
+      conv_fns[key] = fn_name
+      lines.append(f"def {fn_name}({', '.join(DIAG_VIS_FN_ARGUMENTS)}):\n")
+      lines.append(f"  return {subs_sympy(coh)}\n")
+      lines.append("\n")
+
+    for stokes, wgt in zip(stokes_schema, wgt_diag):
+      fn_name = f"{pol_type.upper()}_WEIGHT_DIAGJONES_{stokes.upper()}"
+      key = ("WEIGHT", pol_type.upper(), "DIAGJONES", stokes.upper())
+      conv_fns[key] = fn_name
+      lines.append(f"def {fn_name}({', '.join(DIAG_WEIGHT_FN_ARGUMENTS)}):\n")
+      lines.append(f"  return ({subs_sympy(wgt)}).real\n")
+      lines.append("\n")
+
+    for stokes, wgt in zip(stokes_schema, wgt_diag):
+      # Minimum-variance weights: 4 * min over the expansion terms of the
+      # diag weight expression, each term cast to real (the terms are
+      # real-valued products; builtin min cannot order complex values).
+      fn_name = f"{pol_type.upper()}_WEIGHT_MINVAR_DIAGJONES_{stokes.upper()}"
+      key = ("WEIGHT_MINVAR", pol_type.upper(), "DIAGJONES", stokes.upper())
+      conv_fns[key] = fn_name
+      expanded = sympy.expand(wgt)
+      terms = expanded.args if isinstance(expanded, sympy.Add) else (expanded,)
+      term_srcs = ", ".join(f"({subs_sympy(t)}).real" for t in terms)
+      lines.append(f"def {fn_name}({', '.join(DIAG_WEIGHT_FN_ARGUMENTS)}):\n")
+      lines.append(f"  return 4 * min({term_srcs})\n")
       lines.append("\n")
 
   lines.append("CONVERT_FNS = {\n")
