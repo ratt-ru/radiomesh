@@ -5,6 +5,7 @@ Changelog
 
 X.Y.Z (DD-MM-YYYY)
 ------------------
+* Add DIAG and MINVAR versions of the generated Stokes expressions (:pr:`81`)
 * Extract general-purpose numba intrinsics, literals, and concurrency primitives
   into ``rarg-numba-patterns`` (:pr:`80`)
 * Replace ESKernel dataclass with a StructRef ESKernel (:pr:`78`)
