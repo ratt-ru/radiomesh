@@ -63,7 +63,7 @@ def do_ducc0_wgridding(
 
   print(
     f"Time taken to map ({nrow},{nchan},{ncorr}) to "
-    f"({ncorr},{nx},{ny}) = {time.time()-start}s"
+    f"({ncorr},{nx},{ny}) = {time.time() - start}s"
   )
 
 
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     wgt = ms.getcol("WEIGHT_SPECTRUM")
   except Exception:
     wgt = np.ones(vis.shape, dtype="f4")
-  print(f"Visibility size {vis.nbytes / 1024.**3:.2f}GB")
+  print(f"Visibility size {vis.nbytes / 1024.0**3:.2f}GB")
   ms.close()
   freq = table(f"{args.ms}::SPECTRAL_WINDOW").getcol("CHAN_FREQ")[0]
 
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     )
     print(
       f"Time taken to map ({ntime},{nbl},{nchan},{ncorr}) "
-      f"to ({ncorr},{nx},{ny}) = {time.time()-start}s"
+      f"to ({ncorr},{nx},{ny}) = {time.time() - start}s"
     )
 
   else:
