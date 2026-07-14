@@ -4,7 +4,12 @@ import numba
 import numpy as np
 from numba import types
 from numba.experimental import structref
-from numba.extending import overload, overload_method, register_jitable
+from numba.extending import (
+  overload,
+  overload_attribute,
+  overload_method,
+  register_jitable,
+)
 
 from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
 from radiomesh.numba_utils import make_structref_property
@@ -94,6 +99,12 @@ def generate_poly_coeffs(support, beta, e0, degree):
       coeff[j, i] = lcf2[degree - j]
 
   return coeff
+
+
+@register_jitable(inline="always")
+def polynomial_degree(support: int) -> int:
+  """Returns an even polynomial degree, given the kernel support"""
+  return support + 3 + (support & 1)
 
 
 @structref.register
@@ -211,38 +222,29 @@ def overload_es_kernel(
       instance.support = support
 
     if not ANALYTIC:
-      instance.coeffs = generate_poly_coeffs(support, beta, e0, support + 3)
+      degree = polynomial_degree(support)
+      instance.coeffs = generate_poly_coeffs(support, beta, e0, degree)
 
     return instance
 
   return impl
 
 
-@overload_method(ESKernelStructRef, "allocate_taps")
+@overload_method(ESKernelStructRef, "allocate_taps", inline="always")
 def overload_allocate_taps(self):
   """Allocate a 1-D array of length ``support`` to hold kernel taps.
 
   dtype is float32 when ``single`` is a literal True, otherwise float64.
   """
-  support_lit = self.get_literal("support")
-  single_lit = self.get_literal("single")
-
-  if isinstance(single_lit, bool):
-    dtype = np.float32 if single_lit else np.float64
+  if isinstance(SINGLE := self.get_literal("single"), bool):
+    dtype = np.float32 if SINGLE else np.float64
   else:
     dtype = np.float64
 
-  if isinstance(support_lit, int):
-    SUPPORT = support_lit
-
-    def impl(self):
-      return np.empty(SUPPORT, dtype)
+  if isinstance(SUPPORT := self.get_literal("support"), int):
+    return lambda self: np.empty(SUPPORT, dtype)
   else:
-
-    def impl(self):
-      return np.empty(self.support, dtype)
-
-  return impl
+    return lambda self: np.empty(self.support, dtype)
 
 
 @overload_method(ESKernelStructRef, "evaluate")
@@ -390,3 +392,30 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             out[offset] = value
 
   return impl
+
+
+@overload_method(ESKernelStructRef, "evaluate_support_2d_scalar")
+def overload_evaluate_support_2d_scalar(self, x, y, z, nth, result):
+  if isinstance(self.get_literal("support"), int):
+    raise NotImplementedError
+
+  def impl(self, x, y, z, nth, result):
+    for SUPPORT in numba.literal_unroll(range(4, 16)):
+      if self.support == SUPPORT:
+        HALF = (polynomial_degree(SUPPORT) + 1) // 2
+        if nth >= (SUPPORT + 1) // 2:
+          z = -z
+          nth = SUPPORT - nth - 1
+
+        x2 = x * x
+        y2 = y * y
+        z2 = z * z
+
+    pass
+
+  return impl
+
+
+@overload_attribute(ESKernelStructRef, "nsafe")
+def overload_es_kernel_nsafe(self):
+  return lambda self: (self.support + 1) // 2
