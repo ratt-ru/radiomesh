@@ -20,8 +20,7 @@ def apply_weights(
 
   if not is_float_weight and not is_tuple_weight:
     raise TypingError(
-      f"'weight' ({weight}) must be a float or "
-      f"a tuple of values of length {len(data)}"
+      f"'weight' ({weight}) must be a float or a tuple of values of length {len(data)}"
     )
 
   unified_type = typingctx.unify_types(
@@ -109,8 +108,7 @@ def check_args(uvw, visibilities, weights, flags, frequencies, nschema_pol):
 
   if frequencies.shape[0] != visibilities.shape[-2]:
     raise ValueError(
-      "Frequency shape does not match the visibility shape "
-      "in the frequency dimension"
+      "Frequency shape does not match the visibility shape in the frequency dimension"
     )
 
   if not (visibilities.shape == weights.shape == flags.shape):

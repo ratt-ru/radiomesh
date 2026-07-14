@@ -91,8 +91,7 @@ def check_stokes_datasources(stokes_schema, data_schema, data_source_map):
       deps = STOKES_DEPENDENCIES[stokes]
     except KeyError:
       raise ValueError(
-        f"{stokes} is not a valid "
-        f"stokes parameter: {list(STOKES_DEPENDENCIES.keys())}"
+        f"{stokes} is not a valid stokes parameter: {list(STOKES_DEPENDENCIES.keys())}"
       )
 
     index_maps = 0

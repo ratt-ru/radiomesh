@@ -78,7 +78,7 @@ def maybe_apply_jones_overload(apply_jones_literal, jones_params, data, idx):
     or not all(isinstance(i, types.Integer) for i in idx)
   ):
     raise TypingError(
-      f"'idx' {idx} must be a " f"(time, baseline, channel, direction) index tuple"
+      f"'idx' {idx} must be a (time, baseline, channel, direction) index tuple"
     )
 
   DATA_TYPE = apply_jones.data_type
