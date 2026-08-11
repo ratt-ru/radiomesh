@@ -82,8 +82,9 @@ ANTENNA_POSITIONS = np.array(
 )
 
 MAX_ANTENNAS = len(ANTENNA_POSITIONS)
-NANT = 6
-DEFAULT_UVW_PARAM = {"nant": NANT}
+NANT = 7
+AUTO_CORRS = True
+DEFAULT_UVW_PARAM = {"nant": NANT, "auto_corrs": AUTO_CORRS}
 
 
 @pytest.fixture(params=[DEFAULT_UVW_PARAM])
@@ -92,6 +93,7 @@ def uvw_coordinates(request, timesteps):
   from astropy.coordinates import EarthLocation, SkyCoord
 
   nant = request.param.get("nant", NANT)
+  auto_corrs = request.param.get("auto_corrs", AUTO_CORRS)
   if nant > MAX_ANTENNAS:
     raise ValueError(f"nant={nant} exceeds MAX_ANTENNAS={MAX_ANTENNAS}")
 
@@ -104,7 +106,7 @@ def uvw_coordinates(request, timesteps):
   ref_loc = EarthLocation.from_geocentric(*ant_pos[0], unit=u.m)
 
   # ECEF XYZ baseline vectors (metres), one per unique antenna pair
-  ant1_idx, ant2_idx = np.triu_indices(nant, 1)
+  ant1_idx, ant2_idx = np.triu_indices(nant, 1 if auto_corrs else 0)
   xyz_bl = ant_pos[ant2_idx] - ant_pos[ant1_idx]  # (nbl, 3)
 
   # Hour Angle per timestep via mean sidereal time (avoids IERS data download)
