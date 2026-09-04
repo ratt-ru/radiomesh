@@ -56,7 +56,7 @@ def overload_phase_term(phase_centre, radec):
       obj.lmnm1[s, 0] = l = cos_dec * sin_ra_delta  # noqa
       obj.lmnm1[s, 1] = m = sin_dec * cos_pc_dec - cos_dec * sin_pc_dec * cos_ra_delta
       n = one - l**2 - m**2
-      obj.lmnm1[s, 3] = np.sqrt(n * (n > zero)) - one
+      obj.lmnm1[s, 2] = np.sqrt(n * (n > zero)) - one
 
     return obj
 
