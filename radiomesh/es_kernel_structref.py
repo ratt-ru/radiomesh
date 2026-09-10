@@ -271,7 +271,7 @@ def overload_evaluate(self, x):
           return math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
 
     else:
-      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, polynomial_degree(SUPPORT))
       NCOEFFS = len(COEFFS)
 
       def impl(self, x):
@@ -344,7 +344,7 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             out[offset] = math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
 
     else:
-      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, polynomial_degree(SUPPORT))
       NCOEFFS = len(COEFFS)
 
       def impl(self, grid, pixel_start, out):

@@ -2,7 +2,11 @@ import numba
 import numpy as np
 import pytest
 
-from radiomesh.es_kernel_structref import ESKernel, generate_poly_coeffs
+from radiomesh.es_kernel_structref import (
+  ESKernel,
+  generate_poly_coeffs,
+  polynomial_degree,
+)
 from radiomesh.tests.test_polynomial_kernel import generate_poly_coeffs_numpy
 
 
@@ -17,7 +21,7 @@ from radiomesh.tests.test_polynomial_kernel import generate_poly_coeffs_numpy
   ],
 )
 def test_generate_poly_coeffs_vs_numpy(support, beta, e0):
-  degree = support + 3
+  degree = polynomial_degree(support)
   ref = np.array(generate_poly_coeffs_numpy(support, beta, e0, degree))
   result = generate_poly_coeffs(support, beta, e0, degree)
   np.testing.assert_allclose(result, ref, rtol=1e-5, atol=1e-12)

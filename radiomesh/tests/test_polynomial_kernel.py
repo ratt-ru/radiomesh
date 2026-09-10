@@ -56,7 +56,12 @@ def generate_poly_coeffs_numpy(
     half = (right - left) * 0.5
 
     cheb_c = chebinterpolate(lambda locx, m=mid, h=half: es_kernel(locx * h + m), D)
-    poly_c = cheb2poly(cheb_c)
+    # cheb2poly trims trailing (highest-order) zero coefficients. This happens
+    # for the sub-interval centred on zero, where the kernel is even and the
+    # odd Chebyshev coefficients vanish exactly, so pad back out to D + 1.
+    poly_c = np.zeros(D + 1)
+    trimmed = cheb2poly(cheb_c)
+    poly_c[: len(trimmed)] = trimmed
     coeff[:, i] = poly_c[::-1]
 
   return tuple(tuple(float(v) for v in row) for row in coeff)
