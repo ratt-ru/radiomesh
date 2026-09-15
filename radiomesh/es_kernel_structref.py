@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING, Tuple
 
 import numba
 import numpy as np
-from numba import types
+from numba.core import errors, types
 from numba.experimental import structref
 from numba.extending import (
   overload,
@@ -13,6 +16,20 @@ from numba.extending import (
 
 from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
 from radiomesh.numba_utils import make_structref_property
+from radiomesh.simd import widest_simd_register_bits
+
+if TYPE_CHECKING:
+  import numpy.typing as npt
+
+
+def simd_vector_length(single: bool = True):
+  """Return the largest number of float32/float64's
+  that can fit in a single SIMD register"""
+  if (simd_bits := widest_simd_register_bits()) == 0:
+    return 1
+
+  dt = np.dtype(np.float32 if single else np.float64)
+  return simd_bits // (8 * dt.itemsize)
 
 
 @register_jitable
@@ -142,8 +159,8 @@ class ESKernel(structref.StructRefProxy):
       e0,
       support,
       Datum(analytic) if not isinstance(analytic, Datum) else analytic,
-      single,
-      apply_w,
+      Datum(single) if not isinstance(single, Datum) else single,
+      Datum(apply_w) if not isinstance(apply_w, Datum) else apply_w,
     )
 
   epsilon = make_structref_property("epsilon")
@@ -394,28 +411,249 @@ def overload_evaluate_support(self, grid, pixel_start, out):
   return impl
 
 
-@overload_method(ESKernelStructRef, "evaluate_support_2d_scalar")
-def overload_evaluate_support_2d_scalar(self, x, y, z, nth, result):
-  if isinstance(self.get_literal("support"), int):
-    raise NotImplementedError
+@overload_attribute(ESKernelStructRef, "nsafe")
+def overload_es_kernel_nsafe(self):
+  return lambda self: (self.support + 1) // 2
 
-  def impl(self, x, y, z, nth, result):
-    for SUPPORT in numba.literal_unroll(range(4, 16)):
-      if self.support == SUPPORT:
-        HALF = (polynomial_degree(SUPPORT) + 1) // 2
-        if nth >= (SUPPORT + 1) // 2:
-          z = -z
-          nth = SUPPORT - nth - 1
 
-        x2 = x * x
-        y2 = y * y
-        z2 = z * z
+@structref.register
+class TemplateESKernelStructRef(LiteralStructRef):
+  """ESKernel StructRef"""
 
-    pass
+  @property
+  def support(self) -> int:
+    """Kernel support"""
+    return self.get_literal("support")
+
+  @property
+  def degree(self) -> int:
+    """Polynomial degree ``degree = support + 3 + (support & 1)``.
+    Always odd, so that ``degree + 1``
+    coefficients split evenly into the two Horner chains
+    when evaluating kernels"""
+    return polynomial_degree(self.support)
+
+  @property
+  def single(self) -> bool:
+    """True if the kernel is represented by single precision floats,
+    False if represented by double"""
+    return self.get_literal("single")
+
+  @property
+  def dtype(self) -> npt.DTypeLike:
+    return np.float32 if self.single else np.float64
+
+  @property
+  def vector_length(self) -> int:
+    """SIMD lanes per register for the tap dtype"""
+    return simd_vector_length(self.single)
+
+  @property
+  def nvectors(self) -> int:
+    """``ceil(support / vector_length)`` -- vectors spanning the full support"""
+    vector_length = self.vector_length
+    return (self.support + vector_length - 1) // vector_length
+
+  @property
+  def nevaluated_vectors(self) -> int:
+    """``ceil(nvectors / 2)`` -- vectors actually evaluated"""
+    return (self.nvectors + 1) // 2
+
+  @property
+  def ntaps(self) -> int:
+    """``nvectors * vector_length`` -- number of kernel taps"""
+    return self.nvectors * self.vector_length
+
+  @property
+  def row_stride(self) -> int:
+    """``nevaluated_vectors * vector_length``` --
+    row stride of the coefficient table, and the number of taps evaluated directly.
+    """
+    return self.nevaluated_vectors * self.vector_length
+
+  @property
+  def zero_padding_start(self) -> int:
+    """``max(support, row_stride)`` --
+    the first tap index at which zero padding starts"""
+    return max(self.support, self.row_stride)
+
+  @property
+  def nmirror(self) -> int:
+    """``max(support - row_stride)``` --"""
+    return max(0, self.support - self.row_stride)
+
+  @property
+  def source_coeffs_shape(self) -> Tuple[int, int]:
+    """Shape of the ``ESKernel`` table this kernel is built from."""
+    return (self.degree + 1, self.support)
+
+  @property
+  def coeffs_shape(self) -> Tuple[int, int]:
+    """Stored polynomial coefficient shape, ``(degree + 1, row_stride)``.
+
+    Rows are padded out to a whole number of SIMD registers and truncated to
+    the first ``row_stride`` sub-intervals; the rest are recovered from the
+    kernel's symmetry. Note ``row_stride`` exceeds ``support`` whenever one
+    register already spans the support -- the table must still be that wide,
+    because the evaluators loop over ``range(row_stride)``.
+    """
+    return (self.degree + 1, self.row_stride)
+
+
+class TemplateESKernel(structref.StructRefProxy):
+  def __new__(cls, es_kernel: ESKernel, support: int, single: bool):
+    return structref.StructRefProxy.__new__(cls, es_kernel, support, single)
+
+  @property
+  @numba.njit
+  def ntaps(self):
+    """Expose ntaps within Python"""
+    return self.ntaps
+
+  @property
+  @numba.njit
+  def row_stride(self):
+    """Expose row_stride within Python"""
+    return self.row_stride
+
+
+structref.define_boxing(TemplateESKernelStructRef, TemplateESKernel)
+
+
+@overload(TemplateESKernel, prefer_literal=True)
+def overload_template_es_kernel(es_kernel, support, single):
+  """Implement the TemplateESKernel constructor"""
+  if not is_datum_literal(support, int):
+    raise errors.RequireLiteralValue(f"support {support} must be an IntegerLiteral")
+
+  if not is_datum_literal(single, bool):
+    raise errors.RequireLiteralValue(f"single {single} must be a BooleanLiteral")
+
+  # The tap dtype follows ``single``, so the coefficient table must too. It
+  # cannot be inherited from ``es_kernel``, whose table is always float64:
+  # ``impl`` builds this field with the ``single``-derived dtype, and a float32
+  # array will not store into a float64 field.
+  fields = [
+    ("es_kernel", es_kernel),
+    ("support", support),
+    ("single", single),
+    ("coeffs", types.float32[:, :] if single.literal_value else types.float64[:, :]),
+  ]
+
+  state_type = TemplateESKernelStructRef(fields)
+
+  NCOLUMNS = min(state_type.support, state_type.row_stride)
+  DTYPE = state_type.dtype
+  COEFFS_SHAPE = state_type.coeffs_shape
+  SOURCE_SHAPE = state_type.source_coeffs_shape
+
+  def impl(es_kernel, support, single):
+    if es_kernel.coeffs.shape != SOURCE_SHAPE:
+      raise ValueError(
+        f"ESKernel.coeffs shape {es_kernel.coeffs.shape} != {SOURCE_SHAPE}"
+      )
+
+    instance = structref.new(state_type)
+    instance.es_kernel
+    instance.support = support
+    instance.single = single
+    instance.coeffs = np.zeros(COEFFS_SHAPE, DTYPE)
+    instance.coeffs[:, :NCOLUMNS] = es_kernel.coeffs[:, :NCOLUMNS]
+    return instance
 
   return impl
 
 
-@overload_attribute(ESKernelStructRef, "nsafe")
-def overload_es_kernel_nsafe(self):
-  return lambda self: (self.support + 1) // 2
+@overload_attribute(TemplateESKernelStructRef, "ntaps", inline="always")
+def overload_template_es_kernel_ntaps(self):
+  """Expose ntaps within numba"""
+  NTAPS = self.ntaps
+  return lambda self: NTAPS
+
+
+@overload_attribute(TemplateESKernelStructRef, "row_stride", inline="always")
+def overload_template_es_kernel_row_stride(self):
+  """Expose row_stride within numba"""
+  ROW_STRIDE = self.row_stride
+  return lambda self: ROW_STRIDE
+
+
+@overload_method(
+  TemplateESKernelStructRef,
+  "eval2s",
+  prefer_literal=True,
+  inline="always",
+  fastmath=True,
+)
+def overload_eval2s(self, x, y, z, nth, ku, kv, result):
+  DTYPE = self.dtype
+  ZERO = DTYPE(0.0)
+  TWO = DTYPE(2.0)
+  ROW_STRIDE = self.row_stride
+  SUPPORT = self.support
+  NMIRROR = self.nmirror
+  DEGREE = self.degree
+
+  # Iteration tuples for combination with literal_unroll
+  # Bound is the polynomial DEGREE, not the support: the two Horner chains
+  # between them consume all DEGREE + 1 coefficient rows. Using SUPPORT here
+  # truncates the chains and silently drops the highest-order coefficients.
+  COEFF_INDEX = tuple(range(2, DEGREE, 2))
+  ZERO_PAD_INDEX = tuple(range(self.zero_padding_start, self.ntaps))
+  ROW_STRIDE_INDEX = tuple(range(self.row_stride))
+  HAS_PADDING = len(ZERO_PAD_INDEX) > 0
+
+  def impl(self, x, y, z, nth, ku, kv, result):
+    x = DTYPE(x)
+    y = DTYPE(y)
+    z = DTYPE(z - nth) * TWO + DTYPE(SUPPORT - 1)
+
+    if nth >= ROW_STRIDE:
+      z *= DTYPE(-1)
+      nth = SUPPORT - 1 - nth
+
+    x2 = DTYPE(x * x)
+    y2 = DTYPE(y * y)
+    z2 = DTYPE(z * z)
+
+    # Evaluate the contribution of the z coordinate
+    tap_value_z = self.coeffs[0, nth]
+    tap_value_z2 = self.coeffs[1, nth]
+
+    for j in numba.literal_unroll(COEFF_INDEX):
+      tap_value_z = tap_value_z * z2 + self.coeffs[j, nth]
+      tap_value_z2 = tap_value_z2 * z2 + self.coeffs[j + 1, nth]
+
+    z_factor = tap_value_z * z + tap_value_z2
+
+    if HAS_PADDING:
+      for k in numba.literal_unroll(ZERO_PAD_INDEX):
+        ku[k] = ZERO
+        kv[k] = ZERO
+
+    for k in numba.literal_unroll(ROW_STRIDE_INDEX):
+      cj = self.coeffs[0, k]
+      cj1 = self.coeffs[1, k]
+      tap_value_x = cj
+      tap_value_y = cj
+      tap_value_x2 = cj1
+      tap_value_y2 = cj1
+
+      for j in numba.literal_unroll(COEFF_INDEX):
+        cj = self.coeffs[j, k]
+        cj1 = self.coeffs[j + 1, k]
+
+        tap_value_x = tap_value_x * x2 + cj
+        tap_value_y = tap_value_y * y2 + cj
+        tap_value_x2 = tap_value_x2 * x2 + cj1
+        tap_value_y2 = tap_value_y2 * y2 + cj1
+
+      ku[k] = (tap_value_x * x + tap_value_x2) * z_factor
+      kv[k] = tap_value_y * y + tap_value_y2
+
+      if k < NMIRROR:
+        k2 = SUPPORT - 1 - k
+        ku[k2] = (tap_value_x2 - tap_value_x * x) * z_factor
+        kv[k2] = tap_value_y2 - tap_value_y * y
+
+  return impl
