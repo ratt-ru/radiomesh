@@ -495,6 +495,41 @@ class TemplateESKernelStructRef(LiteralStructRef):
 
 
 class TemplateESKernel(structref.StructRefProxy):
+  """SIMD-oriented re-layout of an :class:`ESKernel` polynomial coefficient table.
+
+  A port of ducc0's ``TemplateKernel`` (``ducc0/math/gridding_kernel.h``).
+  ``support`` and ``single`` are *template* parameters and must be
+  compile-time :class:`Datum` literals: every loop bound, buffer length and
+  the tap dtype derive from them and are baked into the generated code.
+  ``beta`` and ``e0`` change only the values in the table, never its shape,
+  so the same specialisation serves any kernel of that support.
+
+  The table is stored as ``(degree + 1, row_stride)``, one column per
+  sub-interval of ``[-1, 1]`` and rows in Horner order (row 0 is the
+  highest power). It differs from ``ESKernel.coeffs`` in two ways:
+
+  * Columns are truncated to ``row_stride``, a whole number of SIMD
+    registers spanning half the support. The remaining ``nmirror``
+    sub-intervals are recovered from the kernel's symmetry: sub-interval
+    ``support - 1 - k`` is sub-interval ``k`` with the local coordinate
+    negated, so the two share a pair of Horner chains and differ only in
+    the sign of the odd part.
+  * The dtype follows ``single``, rather than always being float64, so that
+    the taps are produced in the precision the gridding loop consumes.
+
+  The evaluators (``eval2s``, ``eval2``) write ``ntaps`` taps rather than
+  ``support``: the tail past the support is padding held at zero, so that
+  the gridding loop can process whole registers unconditionally. Tap buffers
+  must be ``ntaps`` long -- ``ESKernel.allocate_taps()`` returns ``support``
+  entries and is too short for them.
+
+  Args:
+    es_kernel: polynomial (``analytic=False``) kernel supplying the source
+      ``(degree + 1, support)`` coefficient table.
+    support: kernel support, as an integer literal.
+    single: float32 taps if True, float64 otherwise, as a boolean literal.
+  """
+
   def __new__(cls, es_kernel: ESKernel, support: int, single: bool):
     return structref.StructRefProxy.__new__(cls, es_kernel, support, single)
 
@@ -580,6 +615,28 @@ def overload_template_es_kernel_row_stride(self):
   fastmath=True,
 )
 def overload_eval2s(self, x, y, z, nth, ku, kv, result):
+  """Evaluate the three-axis separable kernel for a single visibility.
+
+  All ``support`` u taps and v taps are evaluated at once -- one Horner
+  chain over the even powers of the local coordinate and one over the odd
+  powers, which also lets each stored sub-interval yield its mirror image
+  for free. The w axis contributes a *single* tap, because a visibility
+  touches one w plane at a time; that tap is folded into the u taps as a
+  scale factor, so the gridding loop never multiplies by it again.
+
+  Args:
+    x: u position of the visibility within the kernel footprint, normalised
+      to ``[-1, 1]``, i.e. ``-2 * ufrac + (support - 1)``.
+    y: as ``x``, for the v axis.
+    z: w position of the visibility in w-plane units, ``(w0 - w) / dw``.
+      Reduced internally, using ``nth``, to the same ``[-1, 1]`` frame.
+    nth: index of the w plane being gridded, in ``[0, support)``.
+    ku: output buffer of ``ntaps`` u taps, scaled by the w tap.
+    kv: output buffer of ``ntaps`` v taps.
+    result: unused.
+
+  Taps at indices ``[support, ntaps)`` are set to zero.
+  """
   DTYPE = self.dtype
   ZERO = DTYPE(0.0)
   TWO = DTYPE(2.0)
@@ -661,7 +718,21 @@ def overload_eval2s(self, x, y, z, nth, ku, kv, result):
   fastmath=True,
 )
 def overload_eval2(self, x, y, ku, kv):
-  """``eval2s`` without the w axis: the two-axis separable kernel."""
+  """Evaluate the two-axis separable kernel for a single visibility.
+
+  ``eval2s`` without the w axis, used when w gridding is disabled: the same
+  pair of Horner chains and the same symmetry mirror produce all ``support``
+  u and v taps, but the u taps are left unscaled.
+
+  Args:
+    x: u position of the visibility within the kernel footprint, normalised
+      to ``[-1, 1]``, i.e. ``-2 * ufrac + (support - 1)``.
+    y: as ``x``, for the v axis.
+    ku: output buffer of ``ntaps`` u taps.
+    kv: output buffer of ``ntaps`` v taps.
+
+  Taps at indices ``[support, ntaps)`` are set to zero.
+  """
   DTYPE = self.dtype
   ZERO = DTYPE(0.0)
   SUPPORT = self.support
@@ -725,13 +796,23 @@ def overload_eval2(self, x, y, ku, kv):
   fastmath=True,
 )
 def overload_template_eval(self, x):
-  """Scalar evaluation of a single kernel tap.
+  """Evaluate the kernel at a single position.
 
-  ``x`` is the position within the kernel footprint, normalised to
-  ``[-1, 1]`` -- unlike ``ESKernelStructRef.evaluate``, which takes a
-  position in grid pixels. Sub-intervals beyond ``row_stride`` are not
-  stored, so they are reached by reflecting both the sub-interval index and
-  the local coordinate through the centre of the (symmetric) kernel.
+  The scalar counterpart of ``eval2``/``eval2s``, and the equivalent of
+  ``ESKernelStructRef.evaluate`` reading the truncated table: it locates the
+  sub-interval containing ``x``, reflects it into the stored half of the
+  table if need be, and runs a single Horner chain over all ``degree + 1``
+  coefficient rows. Mostly useful for checking the table, since it evaluates
+  one tap where the vector evaluators produce all of them for the same
+  polynomial degree.
+
+  Args:
+    x: position within the kernel footprint, normalised to ``[-1, 1]``.
+      Note this differs from ``ESKernelStructRef.evaluate``, which takes a
+      position in grid pixels, i.e. in ``[-support / 2, support / 2]``.
+
+  Returns:
+    The kernel value, zero for ``abs(x) >= 1``.
   """
   DTYPE = self.dtype
   ZERO = DTYPE(0.0)
