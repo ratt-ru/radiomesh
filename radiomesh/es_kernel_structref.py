@@ -614,7 +614,7 @@ def overload_template_es_kernel_row_stride(self):
   inline="always",
   fastmath=True,
 )
-def overload_eval2s(self, x, y, z, nth, ku, kv, result):
+def overload_eval2s(self, x, y, z, nth, ku, kv):
   """Evaluate the three-axis separable kernel for a single visibility.
 
   All ``support`` u taps and v taps are evaluated at once -- one Horner
@@ -633,7 +633,6 @@ def overload_eval2s(self, x, y, z, nth, ku, kv, result):
     nth: index of the w plane being gridded, in ``[0, support)``.
     ku: output buffer of ``ntaps`` u taps, scaled by the w tap.
     kv: output buffer of ``ntaps`` v taps.
-    result: unused.
 
   Taps at indices ``[support, ntaps)`` are set to zero.
   """
@@ -654,7 +653,7 @@ def overload_eval2s(self, x, y, z, nth, ku, kv, result):
   ROW_STRIDE_INDEX = tuple(range(self.row_stride))
   HAS_PADDING = len(ZERO_PAD_INDEX) > 0
 
-  def impl(self, x, y, z, nth, ku, kv, result):
+  def impl(self, x, y, z, nth, ku, kv):
     x = DTYPE(x)
     y = DTYPE(y)
     z = DTYPE(z - nth) * TWO + DTYPE(SUPPORT - 1)

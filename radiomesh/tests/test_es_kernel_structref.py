@@ -176,10 +176,10 @@ def test_template_es_kernel(support, single):
   # marks only the call's return value noalias, and the attribute is lost when
   # the data pointer is read back out of the meminfo.
   @numba.njit(fastmath=True)
-  def call_template(template_es_kernel, x, y, z, nth, ku, kv, result):
+  def call_template(template_es_kernel, x, y, z, nth, ku, kv):
     taps_u = stack_array((ntaps,), dtype)
     taps_v = stack_array((ntaps,), dtype)
-    template_es_kernel.eval2s(x, y, z, nth, taps_u, taps_v, result)
+    template_es_kernel.eval2s(x, y, z, nth, taps_u, taps_v)
     for i in range(ntaps):
       ku[i] = taps_u[i]
       kv[i] = taps_v[i]
@@ -199,7 +199,7 @@ def test_template_es_kernel(support, single):
 
     ku = np.full(ntaps, np.nan, dtype)
     kv = np.full(ntaps, np.nan, dtype)
-    call_template(template_es_kernel, x, y, z, nth, ku, kv, True)
+    call_template(template_es_kernel, x, y, z, nth, ku, kv)
 
     # eval2s folds the single w tap into the u taps so the gridding loop never
     # multiplies by it again. Mirror eval2s' own reduction of the w coordinate.
