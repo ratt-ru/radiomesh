@@ -22,16 +22,6 @@ if TYPE_CHECKING:
   import numpy.typing as npt
 
 
-def simd_vector_length(single: bool = True):
-  """Return the largest number of float32/float64's
-  that can fit in a single SIMD register"""
-  if (simd_bits := widest_simd_register_bits()) == 0:
-    return 1
-
-  dt = np.dtype(np.float32 if single else np.float64)
-  return simd_bits // (8 * dt.itemsize)
-
-
 @register_jitable
 def generate_poly_coeffs(support, beta, e0, degree):
   """Generate polynomial approximation coefficients for the ES kernel.
@@ -446,7 +436,11 @@ class TemplateESKernelStructRef(LiteralStructRef):
   @property
   def vector_length(self) -> int:
     """SIMD lanes per register for the tap dtype"""
-    return simd_vector_length(self.single)
+    if (simd_bits := widest_simd_register_bits()) == 0:
+      return 1
+
+    dt = np.dtype(np.float32 if self.single else np.float64)
+    return simd_bits // (8 * dt.itemsize)
 
   @property
   def nvectors(self) -> int:
@@ -655,5 +649,115 @@ def overload_eval2s(self, x, y, z, nth, ku, kv, result):
         k2 = SUPPORT - 1 - k
         ku[k2] = (tap_value_x2 - tap_value_x * x) * z_factor
         kv[k2] = tap_value_y2 - tap_value_y * y
+
+  return impl
+
+
+@overload_method(
+  TemplateESKernelStructRef,
+  "eval2",
+  prefer_literal=True,
+  inline="always",
+  fastmath=True,
+)
+def overload_eval2(self, x, y, ku, kv):
+  """``eval2s`` without the w axis: the two-axis separable kernel."""
+  DTYPE = self.dtype
+  ZERO = DTYPE(0.0)
+  SUPPORT = self.support
+  NMIRROR = self.nmirror
+  DEGREE = self.degree
+
+  # Iteration tuples for combination with literal_unroll
+  # Bound is the polynomial DEGREE, not the support: the two Horner chains
+  # between them consume all DEGREE + 1 coefficient rows. Using SUPPORT here
+  # truncates the chains and silently drops the highest-order coefficients.
+  COEFF_INDEX = tuple(range(2, DEGREE, 2))
+  ZERO_PAD_INDEX = tuple(range(self.zero_padding_start, self.ntaps))
+  ROW_STRIDE_INDEX = tuple(range(self.row_stride))
+  HAS_PADDING = len(ZERO_PAD_INDEX) > 0
+
+  def impl(self, x, y, ku, kv):
+    x = DTYPE(x)
+    y = DTYPE(y)
+
+    x2 = DTYPE(x * x)
+    y2 = DTYPE(y * y)
+
+    if HAS_PADDING:
+      for k in numba.literal_unroll(ZERO_PAD_INDEX):
+        ku[k] = ZERO
+        kv[k] = ZERO
+
+    for k in numba.literal_unroll(ROW_STRIDE_INDEX):
+      cj = self.coeffs[0, k]
+      cj1 = self.coeffs[1, k]
+      tap_value_x = cj
+      tap_value_y = cj
+      tap_value_x2 = cj1
+      tap_value_y2 = cj1
+
+      for j in numba.literal_unroll(COEFF_INDEX):
+        cj = self.coeffs[j, k]
+        cj1 = self.coeffs[j + 1, k]
+
+        tap_value_x = tap_value_x * x2 + cj
+        tap_value_y = tap_value_y * y2 + cj
+        tap_value_x2 = tap_value_x2 * x2 + cj1
+        tap_value_y2 = tap_value_y2 * y2 + cj1
+
+      ku[k] = tap_value_x * x + tap_value_x2
+      kv[k] = tap_value_y * y + tap_value_y2
+
+      if k < NMIRROR:
+        k2 = SUPPORT - 1 - k
+        ku[k2] = tap_value_x2 - tap_value_x * x
+        kv[k2] = tap_value_y2 - tap_value_y * y
+
+  return impl
+
+
+@overload_method(
+  TemplateESKernelStructRef,
+  "eval",
+  prefer_literal=True,
+  inline="always",
+  fastmath=True,
+)
+def overload_template_eval(self, x):
+  """Scalar evaluation of a single kernel tap.
+
+  ``x`` is the position within the kernel footprint, normalised to
+  ``[-1, 1]`` -- unlike ``ESKernelStructRef.evaluate``, which takes a
+  position in grid pixels. Sub-intervals beyond ``row_stride`` are not
+  stored, so they are reached by reflecting both the sub-interval index and
+  the local coordinate through the centre of the (symmetric) kernel.
+  """
+  DTYPE = self.dtype
+  ZERO = DTYPE(0.0)
+  SUPPORT = self.support
+  ROW_STRIDE = self.row_stride
+  # See the COEFF_INDEX note in eval2s: the chain runs over all DEGREE + 1
+  # coefficient rows, which is not the same as the support.
+  COEFF_INDEX = tuple(range(1, self.degree + 1))
+
+  def impl(self, x):
+    if abs(x) >= 1.0:
+      return ZERO
+
+    xrel = SUPPORT * 0.5 * (DTYPE(x) + DTYPE(1.0))
+    nth = min(int(xrel), SUPPORT - 1)
+    locx = (DTYPE(xrel - nth) - DTYPE(0.5)) * DTYPE(2.0)
+
+    if nth >= ROW_STRIDE:
+      locx = -locx
+      nth = SUPPORT - 1 - nth
+
+    value = self.coeffs[0, nth]
+
+    for j in numba.literal_unroll(COEFF_INDEX):
+      value = value * locx + self.coeffs[j, nth]
+
+    return value
 
   return impl

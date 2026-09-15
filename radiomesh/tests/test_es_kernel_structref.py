@@ -5,6 +5,7 @@ from rarg_numba_patterns.literals import Datum
 
 from radiomesh.es_kernel_structref import (
   ESKernel,
+  TemplateESKernel,
   generate_poly_coeffs,
   polynomial_degree,
 )
@@ -160,8 +161,6 @@ def test_template_es_kernel(support, single):
   ``ESKernel.evaluate`` is float64 regardless of ``single``, so it stays an
   accurate reference for both tap precisions.
   """
-  from radiomesh.es_kernel_structref import TemplateESKernel
-
   es_kernel = ESKernel(support=support, analytic=False)
   template_es_kernel = TemplateESKernel(es_kernel, Datum(support), Datum(single))
 
@@ -227,3 +226,91 @@ def test_template_es_kernel(support, single):
     # Taps past the support are padding and must be held at zero.
     assert np.all(ku[support:] == 0.0)
     assert np.all(kv[support:] == 0.0)
+
+
+@pytest.mark.parametrize("support", [4, 6, 7, 15])
+@pytest.mark.parametrize("single", [True, False], ids=["single", "double"])
+def test_template_es_kernel_eval2(support, single):
+  """eval2 reproduces ESKernel.evaluate at every tap position.
+
+  eval2 is eval2s with the w axis removed, so the u taps must come out
+  unscaled by any w factor and the v taps identical to eval2s'.
+  """
+  es_kernel = ESKernel(support=support, analytic=False)
+  template_es_kernel = TemplateESKernel(es_kernel, Datum(support), Datum(single))
+
+  ntaps = template_es_kernel.ntaps
+  dtype = np.float32 if single else np.float64
+
+  # fastmath (and stack_array) on the caller, for the reasons given in
+  # test_template_es_kernel.
+  @numba.njit(fastmath=True)
+  def call_template(template_es_kernel, x, y, ku, kv):
+    taps_u = stack_array((ntaps,), dtype)
+    taps_v = stack_array((ntaps,), dtype)
+    template_es_kernel.eval2(x, y, taps_u, taps_v)
+    for i in range(ntaps):
+      ku[i] = taps_u[i]
+      kv[i] = taps_v[i]
+
+  @numba.njit
+  def evaluate(kernel, x):
+    return kernel.evaluate(x)
+
+  rng = np.random.default_rng(support)
+
+  for _ in range(8):
+    x, y = rng.uniform(-1.0, 1.0, 2)
+
+    ku = np.full(ntaps, np.nan, dtype)
+    kv = np.full(ntaps, np.nan, dtype)
+    call_template(template_es_kernel, x, y, ku, kv)
+
+    expected_u = np.array([evaluate(es_kernel, p) for p in tap_positions(support, x)])
+    expected_v = np.array([evaluate(es_kernel, p) for p in tap_positions(support, y)])
+
+    tol = TEMPLATE_TOL[single]
+    np.testing.assert_allclose(ku[:support], expected_u, rtol=tol, atol=tol)
+    np.testing.assert_allclose(kv[:support], expected_v, rtol=tol, atol=tol)
+
+    # Taps past the support are padding and must be held at zero.
+    assert np.all(ku[support:] == 0.0)
+    assert np.all(kv[support:] == 0.0)
+
+
+@pytest.mark.parametrize("support", [4, 6, 7, 15])
+@pytest.mark.parametrize("single", [True, False], ids=["single", "double"])
+def test_template_es_kernel_eval(support, single):
+  """eval reproduces ESKernel.evaluate for a single tap.
+
+  eval takes a position normalised to ``[-1, 1]``, ESKernel.evaluate one in
+  grid pixels, so the reference position is scaled by ``support / 2``. This
+  pins the mirroring of sub-intervals past ``row_stride``, which is the only
+  part of the truncated table eval touches that the scalar evaluator doesn't.
+  """
+  es_kernel = ESKernel(support=support, analytic=False)
+  template_es_kernel = TemplateESKernel(es_kernel, Datum(support), Datum(single))
+
+  @numba.njit(fastmath=True)
+  def call_eval(template_es_kernel, x):
+    return template_es_kernel.eval(x)
+
+  @numba.njit
+  def evaluate(kernel, x):
+    return kernel.evaluate(x)
+
+  half_support = support / 2.0
+  tol = TEMPLATE_TOL[single]
+
+  # Cover every sub-interval, both those stored and those mirrored.
+  for x in np.linspace(-0.999, 0.999, 8 * support):
+    np.testing.assert_allclose(
+      call_eval(template_es_kernel, x),
+      evaluate(es_kernel, x * half_support),
+      rtol=tol,
+      atol=tol,
+    )
+
+  # Outside the footprint the kernel is zero.
+  for x in (-1.0, 1.0, -1.5, 2.0):
+    assert call_eval(template_es_kernel, x) == 0.0
