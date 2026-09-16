@@ -20,7 +20,7 @@ from numba.extending import (
 from numba.typed import List as TypedList
 
 from radiomesh.errors import KernelSelectionError
-from radiomesh.es_kernel_structref import ESKernel
+from radiomesh.es_kernel_structref import ESKernel, polynomial_degree
 from radiomesh.generated._es_kernel_params import KERNEL_DB
 from radiomesh.numba_utils import make_structref_property
 
@@ -269,7 +269,7 @@ def estimate_gridding_parameters(
     # Number of simd operations per kernel support
     vector_ops = (support + vector_length - 1) // vector_length
     # Polynomial degree
-    degree = support + 3
+    degree = polynomial_degree(support)
 
     nu = 2 * optimal_complex_fft_size(int(nx * oversampling * 0.5) + 1)
     nv = 2 * optimal_complex_fft_size(int(ny * oversampling * 0.5) + 1)

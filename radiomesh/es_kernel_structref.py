@@ -1,13 +1,27 @@
+from __future__ import annotations
+
+import functools
 import math
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Tuple, cast
 
 import numba
 import numpy as np
-from numba import types
+from numba.core import errors, types
 from numba.experimental import structref
-from numba.extending import overload, overload_method, register_jitable
+from numba.extending import (
+  overload,
+  overload_attribute,
+  overload_method,
+  register_jitable,
+)
 
 from radiomesh.literals import Datum, LiteralStructRef, is_datum_literal
 from radiomesh.numba_utils import make_structref_property
+from radiomesh.simd import widest_simd_register_bits
+
+if TYPE_CHECKING:
+  import numpy.typing as npt
 
 
 @register_jitable
@@ -96,6 +110,12 @@ def generate_poly_coeffs(support, beta, e0, degree):
   return coeff
 
 
+@register_jitable(inline="always")
+def polynomial_degree(support: int) -> int:
+  """Returns an even polynomial degree, given the kernel support"""
+  return support + 3 + (support & 1)
+
+
 @structref.register
 class ESKernelStructRef(LiteralStructRef):
   """ESKernel StructRef"""
@@ -131,8 +151,8 @@ class ESKernel(structref.StructRefProxy):
       e0,
       support,
       Datum(analytic) if not isinstance(analytic, Datum) else analytic,
-      single,
-      apply_w,
+      Datum(single) if not isinstance(single, Datum) else single,
+      Datum(apply_w) if not isinstance(apply_w, Datum) else apply_w,
     )
 
   epsilon = make_structref_property("epsilon")
@@ -192,10 +212,10 @@ def overload_es_kernel(
   if not ANALYTIC:
     fields.append(("coeffs", types.float64[:, :]))
 
-  state_type = ESKernelStructRef(fields)
+  struct_type = ESKernelStructRef(fields)
 
   def impl(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
-    instance = structref.new(state_type)
+    instance = structref.new(struct_type)
     instance.epsilon = epsilon
     instance.oversampling = oversampling
     instance.beta = beta
@@ -211,38 +231,29 @@ def overload_es_kernel(
       instance.support = support
 
     if not ANALYTIC:
-      instance.coeffs = generate_poly_coeffs(support, beta, e0, support + 3)
+      degree = polynomial_degree(support)
+      instance.coeffs = generate_poly_coeffs(support, beta, e0, degree)
 
     return instance
 
   return impl
 
 
-@overload_method(ESKernelStructRef, "allocate_taps")
+@overload_method(ESKernelStructRef, "allocate_taps", inline="always")
 def overload_allocate_taps(self):
   """Allocate a 1-D array of length ``support`` to hold kernel taps.
 
   dtype is float32 when ``single`` is a literal True, otherwise float64.
   """
-  support_lit = self.get_literal("support")
-  single_lit = self.get_literal("single")
-
-  if isinstance(single_lit, bool):
-    dtype = np.float32 if single_lit else np.float64
+  if isinstance(SINGLE := self.get_literal("single"), bool):
+    dtype = np.float32 if SINGLE else np.float64
   else:
     dtype = np.float64
 
-  if isinstance(support_lit, int):
-    SUPPORT = support_lit
-
-    def impl(self):
-      return np.empty(SUPPORT, dtype)
+  if isinstance(SUPPORT := self.get_literal("support"), int):
+    return lambda self: np.empty(SUPPORT, dtype)
   else:
-
-    def impl(self):
-      return np.empty(self.support, dtype)
-
-  return impl
+    return lambda self: np.empty(self.support, dtype)
 
 
 @overload_method(ESKernelStructRef, "evaluate")
@@ -269,7 +280,7 @@ def overload_evaluate(self, x):
           return math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
 
     else:
-      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, polynomial_degree(SUPPORT))
       NCOEFFS = len(COEFFS)
 
       def impl(self, x):
@@ -342,7 +353,7 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             out[offset] = math.exp(BETAK * (math.pow(safe_tmp, E0) - 1.0)) * (tmp > 0.0)
 
     else:
-      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, SUPPORT + 3)
+      COEFFS = generate_poly_coeffs(SUPPORT, BETA, E0, polynomial_degree(SUPPORT))
       NCOEFFS = len(COEFFS)
 
       def impl(self, grid, pixel_start, out):
@@ -388,5 +399,508 @@ def overload_evaluate_support(self, grid, pixel_start, out):
             for i in range(1, self.coeffs.shape[0]):
               value = value * locx + self.coeffs[i, nth]
             out[offset] = value
+
+  return impl
+
+
+@overload_attribute(ESKernelStructRef, "nsafe")
+def overload_es_kernel_nsafe(self):
+  return lambda self: (self.support + 1) // 2
+
+
+@dataclass
+class ESKernelOptimisationParameters:
+  """Encapsulate the core parameters used
+  in an optimised implementation of the ESKernel"""
+
+  # The kernel support
+  support: int
+  # Single or double precision kernel
+  single: bool
+
+  @property
+  def degree(self) -> int:
+    """Polynomial degree ``degree = support + 3 + (support & 1)``.
+    Always odd, so that ``degree + 1``
+    coefficients split evenly into the two Horner chains
+    when evaluating kernels"""
+    return polynomial_degree(self.support)
+
+  @property
+  def tilesize(self):
+    """Return the tilesize associated with the precision: 32 if single, 16 if double"""
+    return 32 if self.single else 16
+
+  @property
+  def log2tile(self) -> int:
+    """Return log2(tilesize)"""
+    return int(math.log2(self.tilesize))
+
+  @property
+  def nsafe(self) -> int:
+    """``ceil(support / 2)`` -- halo width, in pixels, that must surround a
+    ``tilesize``-wide tile on every side.
+
+    A visibility whose kernel footprint starts anywhere within a tile can
+    overhang the tile boundary by at most this many pixels, since the
+    support window is centred on the visibility's (sub-pixel) grid
+    position. Padding each tile by ``nsafe`` guarantees every kernel write
+    for that tile lands inside the padded buffer, so per-visibility bounds
+    checks can be skipped.
+    """
+    return (self.support + 1) // 2
+
+  @property
+  def safe_u(self) -> int:
+    """``2 * nsafe + tilesize`` -- extent of the u axis of a per-tile
+    gridding buffer: the tile itself plus an ``nsafe``-wide halo on each
+    side (see :attr:`nsafe`)."""
+    return 2 * self.nsafe + self.tilesize
+
+  @property
+  def safe_v(self) -> int:
+    """``2 * nsafe + tilesize`` -- extent of the v axis of a per-tile
+    gridding buffer. See :attr:`safe_u`."""
+    return 2 * self.nsafe + self.tilesize
+
+  @property
+  def safe_v_vector(self) -> int:
+    """``safe_v + vector_length - 1`` -- :attr:`safe_v` over-allocated so
+    that a SIMD store of ``vector_length`` contiguous v pixels, issued at
+    the last valid v offset, cannot write past the end of the buffer."""
+    return self.safe_v + self.vector_length - 1
+
+  @property
+  def dtype(self) -> npt.DTypeLike:
+    """The floating point data type"""
+    return np.float32 if self.single else np.float64
+
+  @property
+  def vector_length(self) -> int:
+    """SIMD lanes per register for the tap dtype"""
+    if (simd_bits := widest_simd_register_bits()) == 0:
+      return 1
+
+    dtype = np.dtype(np.float32 if self.single else np.float64)
+    return simd_bits // (8 * dtype.itemsize)
+
+  @property
+  def nvectors(self) -> int:
+    """``ceil(support / vector_length)`` -- vectors spanning the full support"""
+    vector_length = self.vector_length
+    return (self.support + vector_length - 1) // vector_length
+
+  @property
+  def nevaluated_vectors(self) -> int:
+    """``ceil(nvectors / 2)`` -- vectors actually evaluated"""
+    return (self.nvectors + 1) // 2
+
+  @property
+  def ntaps(self) -> int:
+    """``nvectors * vector_length`` -- number of kernel taps"""
+    return self.nvectors * self.vector_length
+
+  @property
+  def row_stride(self) -> int:
+    """``nevaluated_vectors * vector_length``` --
+    row stride of the coefficient table, and the number of taps evaluated directly.
+    """
+    return self.nevaluated_vectors * self.vector_length
+
+  @property
+  def zero_padding_start(self) -> int:
+    """``max(support, row_stride)`` --
+    the first tap index at which zero padding starts"""
+    return max(self.support, self.row_stride)
+
+  @property
+  def nmirror(self) -> int:
+    """``max(support - row_stride)``` --"""
+    return max(0, self.support - self.row_stride)
+
+  @property
+  def source_coeffs_shape(self) -> Tuple[int, int]:
+    """Shape of the ``ESKernel`` table this kernel is built from."""
+    return (self.degree + 1, self.support)
+
+  @property
+  def coeffs_shape(self) -> Tuple[int, int]:
+    """Stored polynomial coefficient shape, ``(degree + 1, row_stride)``.
+
+    Rows are padded out to a whole number of SIMD registers and truncated to
+    the first ``row_stride`` sub-intervals; the rest are recovered from the
+    kernel's symmetry. Note ``row_stride`` exceeds ``support`` whenever one
+    register already spans the support -- the table must still be that wide,
+    because the evaluators loop over ``range(row_stride)``.
+    """
+    return (self.degree + 1, self.row_stride)
+
+
+@structref.register
+class TemplateESKernelStructRef(LiteralStructRef):
+  """ESKernel StructRef"""
+
+  @functools.cached_property
+  def opt_params(self) -> ESKernelOptimisationParameters:
+    return ESKernelOptimisationParameters(
+      self.get_literal("support"), self.get_literal("single")
+    )
+
+
+class TemplateESKernel(structref.StructRefProxy):
+  """SIMD-oriented re-layout of an :class:`ESKernel` polynomial coefficient table.
+
+  A port of ducc0's ``TemplateKernel`` (``ducc0/math/gridding_kernel.h``).
+  ``support`` and ``single`` are *template* parameters and must be
+  compile-time :class:`Datum` literals: every loop bound, buffer length and
+  the tap dtype derive from them and are baked into the generated code.
+  ``beta`` and ``e0`` change only the values in the table, never its shape,
+  so the same specialisation serves any kernel of that support.
+
+  The table is stored as ``(degree + 1, row_stride)``, one column per
+  sub-interval of ``[-1, 1]`` and rows in Horner order (row 0 is the
+  highest power). It differs from ``ESKernel.coeffs`` in two ways:
+
+  * Columns are truncated to ``row_stride``, a whole number of SIMD
+    registers spanning half the support. The remaining ``nmirror``
+    sub-intervals are recovered from the kernel's symmetry: sub-interval
+    ``support - 1 - k`` is sub-interval ``k`` with the local coordinate
+    negated, so the two share a pair of Horner chains and differ only in
+    the sign of the odd part.
+  * The dtype follows ``single``, rather than always being float64, so that
+    the taps are produced in the precision the gridding loop consumes.
+
+  The evaluators (``eval2s``, ``eval2``) write ``ntaps`` taps rather than
+  ``support``: the tail past the support is padding held at zero, so that
+  the gridding loop can process whole registers unconditionally. Tap buffers
+  must be ``ntaps`` long -- ``ESKernel.allocate_taps()`` returns ``support``
+  entries and is too short for them.
+
+  Args:
+    es_kernel: polynomial (``analytic=False``) kernel supplying the source
+      ``(degree + 1, support)`` coefficient table.
+    support: kernel support, as an integer literal.
+    single: float32 taps if True, float64 otherwise, as a boolean literal.
+  """
+
+  def __new__(cls, es_kernel: ESKernel, support: int, single: bool):
+    return structref.StructRefProxy.__new__(cls, es_kernel, support, single)
+
+  @property
+  @numba.njit
+  def ntaps(self):
+    """Expose ntaps within Python"""
+    return self.ntaps
+
+  @property
+  @numba.njit
+  def row_stride(self):
+    """Expose row_stride within Python"""
+    return self.row_stride
+
+
+structref.define_boxing(TemplateESKernelStructRef, TemplateESKernel)
+
+
+@overload(TemplateESKernel, prefer_literal=True)
+def overload_template_es_kernel(es_kernel, support, single):
+  """Implement the TemplateESKernel constructor"""
+  if not is_datum_literal(support, int):
+    raise errors.RequireLiteralValue(f"support {support} must be an IntegerLiteral")
+
+  if not is_datum_literal(single, bool):
+    raise errors.RequireLiteralValue(f"single {single} must be a BooleanLiteral")
+
+  # The tap dtype follows ``single``, so the coefficient table must too. It
+  # cannot be inherited from ``es_kernel``, whose table is always float64:
+  # ``impl`` builds this field with the ``single``-derived dtype, and a float32
+  # array will not store into a float64 field.
+  fields = [
+    ("es_kernel", es_kernel),
+    ("support", support),
+    ("single", single),
+    ("coeffs", types.float32[:, :] if single.literal_value else types.float64[:, :]),
+  ]
+
+  struct_type = TemplateESKernelStructRef(fields)
+  opt_params = struct_type.opt_params
+
+  NCOLUMNS = min(opt_params.support, opt_params.row_stride)
+  DTYPE = opt_params.dtype
+  COEFFS_SHAPE = opt_params.coeffs_shape
+  SOURCE_SHAPE = opt_params.source_coeffs_shape
+
+  def impl(es_kernel, support, single):
+    if es_kernel.coeffs.shape != SOURCE_SHAPE:
+      raise ValueError(
+        f"ESKernel.coeffs shape {es_kernel.coeffs.shape} != {SOURCE_SHAPE}"
+      )
+
+    instance = structref.new(struct_type)
+    instance.es_kernel
+    instance.support = support
+    instance.single = single
+    instance.coeffs = np.zeros(COEFFS_SHAPE, DTYPE)
+    instance.coeffs[:, :NCOLUMNS] = es_kernel.coeffs[:, :NCOLUMNS]
+    return instance
+
+  return impl
+
+
+@overload_attribute(TemplateESKernelStructRef, "ntaps", inline="always")
+def overload_template_es_kernel_ntaps(self):
+  """Expose ntaps within numba"""
+  self = cast(TemplateESKernelStructRef, self)
+  NTAPS = self.opt_params.ntaps
+  return lambda self: NTAPS
+
+
+@overload_attribute(TemplateESKernelStructRef, "row_stride", inline="always")
+def overload_template_es_kernel_row_stride(self):
+  """Expose row_stride within numba"""
+  self = cast(TemplateESKernelStructRef, self)
+  ROW_STRIDE = self.opt_params.row_stride
+  return lambda self: ROW_STRIDE
+
+
+@overload_method(
+  TemplateESKernelStructRef,
+  "eval2s",
+  prefer_literal=True,
+  inline="always",
+  fastmath=True,
+)
+def overload_eval2s(self, x, y, z, nth, ku, kv):
+  """Evaluate the three-axis separable kernel for a single visibility.
+
+  All ``support`` u taps and v taps are evaluated at once -- one Horner
+  chain over the even powers of the local coordinate and one over the odd
+  powers, which also lets each stored sub-interval yield its mirror image
+  for free. The w axis contributes a *single* tap, because a visibility
+  touches one w plane at a time; that tap is folded into the u taps as a
+  scale factor, so the gridding loop never multiplies by it again.
+
+  Args:
+    x: u position of the visibility within the kernel footprint, normalised
+      to ``[-1, 1]``, i.e. ``-2 * ufrac + (support - 1)``.
+    y: as ``x``, for the v axis.
+    z: w position of the visibility in w-plane units, ``(w0 - w) / dw``.
+      Reduced internally, using ``nth``, to the same ``[-1, 1]`` frame.
+    nth: index of the w plane being gridded, in ``[0, support)``.
+    ku: output buffer of ``ntaps`` u taps, scaled by the w tap.
+    kv: output buffer of ``ntaps`` v taps.
+
+  Taps at indices ``[support, ntaps)`` are set to zero.
+  """
+  self = cast(TemplateESKernelStructRef, self)
+  DTYPE = self.opt_params.dtype
+  ZERO = DTYPE(0.0)
+  TWO = DTYPE(2.0)
+  ROW_STRIDE = self.opt_params.row_stride
+  SUPPORT = self.opt_params.support
+  NMIRROR = self.opt_params.nmirror
+  DEGREE = self.opt_params.degree
+
+  # Iteration tuples for combination with literal_unroll
+  # Bound is the polynomial DEGREE, not the support: the two Horner chains
+  # between them consume all DEGREE + 1 coefficient rows. Using SUPPORT here
+  # truncates the chains and silently drops the highest-order coefficients.
+  COEFF_INDEX = tuple(range(2, DEGREE, 2))
+  ZERO_PAD_INDEX = tuple(
+    range(self.opt_params.zero_padding_start, self.opt_params.ntaps)
+  )
+  ROW_STRIDE_INDEX = tuple(range(self.opt_params.row_stride))
+  HAS_PADDING = len(ZERO_PAD_INDEX) > 0
+
+  def impl(self, x, y, z, nth, ku, kv):
+    x = DTYPE(x)
+    y = DTYPE(y)
+    z = DTYPE(z - nth) * TWO + DTYPE(SUPPORT - 1)
+
+    if nth >= ROW_STRIDE:
+      z *= DTYPE(-1)
+      nth = SUPPORT - 1 - nth
+
+    x2 = DTYPE(x * x)
+    y2 = DTYPE(y * y)
+    z2 = DTYPE(z * z)
+
+    # Evaluate the contribution of the z coordinate
+    tap_value_z = self.coeffs[0, nth]
+    tap_value_z2 = self.coeffs[1, nth]
+
+    for j in numba.literal_unroll(COEFF_INDEX):
+      tap_value_z = tap_value_z * z2 + self.coeffs[j, nth]
+      tap_value_z2 = tap_value_z2 * z2 + self.coeffs[j + 1, nth]
+
+    z_factor = tap_value_z * z + tap_value_z2
+
+    if HAS_PADDING:
+      for k in numba.literal_unroll(ZERO_PAD_INDEX):
+        ku[k] = ZERO
+        kv[k] = ZERO
+
+    for k in numba.literal_unroll(ROW_STRIDE_INDEX):
+      cj = self.coeffs[0, k]
+      cj1 = self.coeffs[1, k]
+      tap_value_x = cj
+      tap_value_y = cj
+      tap_value_x2 = cj1
+      tap_value_y2 = cj1
+
+      for j in numba.literal_unroll(COEFF_INDEX):
+        cj = self.coeffs[j, k]
+        cj1 = self.coeffs[j + 1, k]
+
+        tap_value_x = tap_value_x * x2 + cj
+        tap_value_y = tap_value_y * y2 + cj
+        tap_value_x2 = tap_value_x2 * x2 + cj1
+        tap_value_y2 = tap_value_y2 * y2 + cj1
+
+      ku[k] = (tap_value_x * x + tap_value_x2) * z_factor
+      kv[k] = tap_value_y * y + tap_value_y2
+
+      if k < NMIRROR:
+        k2 = SUPPORT - 1 - k
+        ku[k2] = (tap_value_x2 - tap_value_x * x) * z_factor
+        kv[k2] = tap_value_y2 - tap_value_y * y
+
+  return impl
+
+
+@overload_method(
+  TemplateESKernelStructRef,
+  "eval2",
+  prefer_literal=True,
+  inline="always",
+  fastmath=True,
+)
+def overload_eval2(self, x, y, ku, kv):
+  """Evaluate the two-axis separable kernel for a single visibility.
+
+  ``eval2s`` without the w axis, used when w gridding is disabled: the same
+  pair of Horner chains and the same symmetry mirror produce all ``support``
+  u and v taps, but the u taps are left unscaled.
+
+  Args:
+    x: u position of the visibility within the kernel footprint, normalised
+      to ``[-1, 1]``, i.e. ``-2 * ufrac + (support - 1)``.
+    y: as ``x``, for the v axis.
+    ku: output buffer of ``ntaps`` u taps.
+    kv: output buffer of ``ntaps`` v taps.
+
+  Taps at indices ``[support, ntaps)`` are set to zero.
+  """
+  self = cast(TemplateESKernelStructRef, self)
+  DTYPE = self.opt_params.dtype
+  ZERO = DTYPE(0.0)
+  SUPPORT = self.opt_params.support
+  NMIRROR = self.opt_params.nmirror
+  DEGREE = self.opt_params.degree
+
+  # Iteration tuples for combination with literal_unroll
+  # Bound is the polynomial DEGREE, not the support: the two Horner chains
+  # between them consume all DEGREE + 1 coefficient rows. Using SUPPORT here
+  # truncates the chains and silently drops the highest-order coefficients.
+  COEFF_INDEX = tuple(range(2, DEGREE, 2))
+  ZERO_PAD_INDEX = tuple(
+    range(self.opt_params.zero_padding_start, self.opt_params.ntaps)
+  )
+  ROW_STRIDE_INDEX = tuple(range(self.opt_params.row_stride))
+  HAS_PADDING = len(ZERO_PAD_INDEX) > 0
+
+  def impl(self, x, y, ku, kv):
+    x = DTYPE(x)
+    y = DTYPE(y)
+
+    x2 = DTYPE(x * x)
+    y2 = DTYPE(y * y)
+
+    if HAS_PADDING:
+      for k in numba.literal_unroll(ZERO_PAD_INDEX):
+        ku[k] = ZERO
+        kv[k] = ZERO
+
+    for k in numba.literal_unroll(ROW_STRIDE_INDEX):
+      cj = self.coeffs[0, k]
+      cj1 = self.coeffs[1, k]
+      tap_value_x = cj
+      tap_value_y = cj
+      tap_value_x2 = cj1
+      tap_value_y2 = cj1
+
+      for j in numba.literal_unroll(COEFF_INDEX):
+        cj = self.coeffs[j, k]
+        cj1 = self.coeffs[j + 1, k]
+
+        tap_value_x = tap_value_x * x2 + cj
+        tap_value_y = tap_value_y * y2 + cj
+        tap_value_x2 = tap_value_x2 * x2 + cj1
+        tap_value_y2 = tap_value_y2 * y2 + cj1
+
+      ku[k] = tap_value_x * x + tap_value_x2
+      kv[k] = tap_value_y * y + tap_value_y2
+
+      if k < NMIRROR:
+        k2 = SUPPORT - 1 - k
+        ku[k2] = tap_value_x2 - tap_value_x * x
+        kv[k2] = tap_value_y2 - tap_value_y * y
+
+  return impl
+
+
+@overload_method(
+  TemplateESKernelStructRef,
+  "eval",
+  prefer_literal=True,
+  inline="always",
+  fastmath=True,
+)
+def overload_template_eval(self, x):
+  """Evaluate the kernel at a single position.
+
+  The scalar counterpart of ``eval2``/``eval2s``, and the equivalent of
+  ``ESKernelStructRef.evaluate`` reading the truncated table: it locates the
+  sub-interval containing ``x``, reflects it into the stored half of the
+  table if need be, and runs a single Horner chain over all ``degree + 1``
+  coefficient rows. Mostly useful for checking the table, since it evaluates
+  one tap where the vector evaluators produce all of them for the same
+  polynomial degree.
+
+  Args:
+    x: position within the kernel footprint, normalised to ``[-1, 1]``.
+      Note this differs from ``ESKernelStructRef.evaluate``, which takes a
+      position in grid pixels, i.e. in ``[-support / 2, support / 2]``.
+
+  Returns:
+    The kernel value, zero for ``abs(x) >= 1``.
+  """
+  self = cast(TemplateESKernelStructRef, self)
+  DTYPE = self.opt_params.dtype
+  ZERO = DTYPE(0.0)
+  SUPPORT = self.opt_params.support
+  ROW_STRIDE = self.opt_params.row_stride
+  # See the COEFF_INDEX note in eval2s: the chain runs over all DEGREE + 1
+  # coefficient rows, which is not the same as the support.
+  COEFF_INDEX = tuple(range(1, self.opt_params.degree + 1))
+
+  def impl(self, x):
+    if abs(x) >= 1.0:
+      return ZERO
+
+    xrel = SUPPORT * 0.5 * (DTYPE(x) + DTYPE(1.0))
+    nth = min(int(xrel), SUPPORT - 1)
+    locx = (DTYPE(xrel - nth) - DTYPE(0.5)) * DTYPE(2.0)
+
+    if nth >= ROW_STRIDE:
+      locx = -locx
+      nth = SUPPORT - 1 - nth
+
+    value = self.coeffs[0, nth]
+
+    for j in numba.literal_unroll(COEFF_INDEX):
+      value = value * locx + self.coeffs[j, nth]
+
+    return value
 
   return impl
