@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import functools
 import math
-from typing import TYPE_CHECKING, Tuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Tuple, cast
 
 import numba
 import numpy as np
@@ -406,14 +408,15 @@ def overload_es_kernel_nsafe(self):
   return lambda self: (self.support + 1) // 2
 
 
-@structref.register
-class TemplateESKernelStructRef(LiteralStructRef):
-  """ESKernel StructRef"""
+@dataclass
+class ESKernelOptimisationParameters:
+  """Encapsulate the core parameters used
+  in an optimised implementation of the ESKernel"""
 
-  @property
-  def support(self) -> int:
-    """Kernel support"""
-    return self.get_literal("support")
+  # The kernel support
+  support: int
+  # Single or double precision kernel
+  single: bool
 
   @property
   def degree(self) -> int:
@@ -424,13 +427,52 @@ class TemplateESKernelStructRef(LiteralStructRef):
     return polynomial_degree(self.support)
 
   @property
-  def single(self) -> bool:
-    """True if the kernel is represented by single precision floats,
-    False if represented by double"""
-    return self.get_literal("single")
+  def tilesize(self):
+    """Return the tilesize associated with the precision: 32 if single, 16 if double"""
+    return 32 if self.single else 16
+
+  @property
+  def log2tile(self) -> int:
+    """Return log2(tilesize)"""
+    return int(math.log2(self.tilesize))
+
+  @property
+  def nsafe(self) -> int:
+    """``ceil(support / 2)`` -- halo width, in pixels, that must surround a
+    ``tilesize``-wide tile on every side.
+
+    A visibility whose kernel footprint starts anywhere within a tile can
+    overhang the tile boundary by at most this many pixels, since the
+    support window is centred on the visibility's (sub-pixel) grid
+    position. Padding each tile by ``nsafe`` guarantees every kernel write
+    for that tile lands inside the padded buffer, so per-visibility bounds
+    checks can be skipped.
+    """
+    return (self.support + 1) // 2
+
+  @property
+  def safe_u(self) -> int:
+    """``2 * nsafe + tilesize`` -- extent of the u axis of a per-tile
+    gridding buffer: the tile itself plus an ``nsafe``-wide halo on each
+    side (see :attr:`nsafe`)."""
+    return 2 * self.nsafe + self.tilesize
+
+  @property
+  def safe_v(self) -> int:
+    """``2 * nsafe + tilesize`` -- extent of the v axis of a per-tile
+    gridding buffer. See :attr:`safe_u`."""
+    return 2 * self.nsafe + self.tilesize
+
+  @property
+  def safe_v_vector(self) -> int:
+    """``safe_v + vector_length - 1`` -- :attr:`safe_v` over-allocated so
+    that a SIMD store of ``vector_length`` contiguous v pixels, issued at
+    the last valid v offset, cannot write past the end of the buffer."""
+    return self.safe_v + self.vector_length - 1
 
   @property
   def dtype(self) -> npt.DTypeLike:
+    """The floating point data type"""
     return np.float32 if self.single else np.float64
 
   @property
@@ -439,8 +481,8 @@ class TemplateESKernelStructRef(LiteralStructRef):
     if (simd_bits := widest_simd_register_bits()) == 0:
       return 1
 
-    dt = np.dtype(np.float32 if self.single else np.float64)
-    return simd_bits // (8 * dt.itemsize)
+    dtype = np.dtype(np.float32 if self.single else np.float64)
+    return simd_bits // (8 * dtype.itemsize)
 
   @property
   def nvectors(self) -> int:
@@ -492,6 +534,17 @@ class TemplateESKernelStructRef(LiteralStructRef):
     because the evaluators loop over ``range(row_stride)``.
     """
     return (self.degree + 1, self.row_stride)
+
+
+@structref.register
+class TemplateESKernelStructRef(LiteralStructRef):
+  """ESKernel StructRef"""
+
+  @functools.cached_property
+  def opt_params(self) -> ESKernelOptimisationParameters:
+    return ESKernelOptimisationParameters(
+      self.get_literal("support"), self.get_literal("single")
+    )
 
 
 class TemplateESKernel(structref.StructRefProxy):
@@ -570,11 +623,12 @@ def overload_template_es_kernel(es_kernel, support, single):
   ]
 
   struct_type = TemplateESKernelStructRef(fields)
+  opt_params = struct_type.opt_params
 
-  NCOLUMNS = min(struct_type.support, struct_type.row_stride)
-  DTYPE = struct_type.dtype
-  COEFFS_SHAPE = struct_type.coeffs_shape
-  SOURCE_SHAPE = struct_type.source_coeffs_shape
+  NCOLUMNS = min(opt_params.support, opt_params.row_stride)
+  DTYPE = opt_params.dtype
+  COEFFS_SHAPE = opt_params.coeffs_shape
+  SOURCE_SHAPE = opt_params.source_coeffs_shape
 
   def impl(es_kernel, support, single):
     if es_kernel.coeffs.shape != SOURCE_SHAPE:
@@ -596,14 +650,16 @@ def overload_template_es_kernel(es_kernel, support, single):
 @overload_attribute(TemplateESKernelStructRef, "ntaps", inline="always")
 def overload_template_es_kernel_ntaps(self):
   """Expose ntaps within numba"""
-  NTAPS = self.ntaps
+  self = cast(TemplateESKernelStructRef, self)
+  NTAPS = self.opt_params.ntaps
   return lambda self: NTAPS
 
 
 @overload_attribute(TemplateESKernelStructRef, "row_stride", inline="always")
 def overload_template_es_kernel_row_stride(self):
   """Expose row_stride within numba"""
-  ROW_STRIDE = self.row_stride
+  self = cast(TemplateESKernelStructRef, self)
+  ROW_STRIDE = self.opt_params.row_stride
   return lambda self: ROW_STRIDE
 
 
@@ -636,21 +692,24 @@ def overload_eval2s(self, x, y, z, nth, ku, kv):
 
   Taps at indices ``[support, ntaps)`` are set to zero.
   """
-  DTYPE = self.dtype
+  self = cast(TemplateESKernelStructRef, self)
+  DTYPE = self.opt_params.dtype
   ZERO = DTYPE(0.0)
   TWO = DTYPE(2.0)
-  ROW_STRIDE = self.row_stride
-  SUPPORT = self.support
-  NMIRROR = self.nmirror
-  DEGREE = self.degree
+  ROW_STRIDE = self.opt_params.row_stride
+  SUPPORT = self.opt_params.support
+  NMIRROR = self.opt_params.nmirror
+  DEGREE = self.opt_params.degree
 
   # Iteration tuples for combination with literal_unroll
   # Bound is the polynomial DEGREE, not the support: the two Horner chains
   # between them consume all DEGREE + 1 coefficient rows. Using SUPPORT here
   # truncates the chains and silently drops the highest-order coefficients.
   COEFF_INDEX = tuple(range(2, DEGREE, 2))
-  ZERO_PAD_INDEX = tuple(range(self.zero_padding_start, self.ntaps))
-  ROW_STRIDE_INDEX = tuple(range(self.row_stride))
+  ZERO_PAD_INDEX = tuple(
+    range(self.opt_params.zero_padding_start, self.opt_params.ntaps)
+  )
+  ROW_STRIDE_INDEX = tuple(range(self.opt_params.row_stride))
   HAS_PADDING = len(ZERO_PAD_INDEX) > 0
 
   def impl(self, x, y, z, nth, ku, kv):
@@ -732,19 +791,22 @@ def overload_eval2(self, x, y, ku, kv):
 
   Taps at indices ``[support, ntaps)`` are set to zero.
   """
-  DTYPE = self.dtype
+  self = cast(TemplateESKernelStructRef, self)
+  DTYPE = self.opt_params.dtype
   ZERO = DTYPE(0.0)
-  SUPPORT = self.support
-  NMIRROR = self.nmirror
-  DEGREE = self.degree
+  SUPPORT = self.opt_params.support
+  NMIRROR = self.opt_params.nmirror
+  DEGREE = self.opt_params.degree
 
   # Iteration tuples for combination with literal_unroll
   # Bound is the polynomial DEGREE, not the support: the two Horner chains
   # between them consume all DEGREE + 1 coefficient rows. Using SUPPORT here
   # truncates the chains and silently drops the highest-order coefficients.
   COEFF_INDEX = tuple(range(2, DEGREE, 2))
-  ZERO_PAD_INDEX = tuple(range(self.zero_padding_start, self.ntaps))
-  ROW_STRIDE_INDEX = tuple(range(self.row_stride))
+  ZERO_PAD_INDEX = tuple(
+    range(self.opt_params.zero_padding_start, self.opt_params.ntaps)
+  )
+  ROW_STRIDE_INDEX = tuple(range(self.opt_params.row_stride))
   HAS_PADDING = len(ZERO_PAD_INDEX) > 0
 
   def impl(self, x, y, ku, kv):
@@ -813,13 +875,14 @@ def overload_template_eval(self, x):
   Returns:
     The kernel value, zero for ``abs(x) >= 1``.
   """
-  DTYPE = self.dtype
+  self = cast(TemplateESKernelStructRef, self)
+  DTYPE = self.opt_params.dtype
   ZERO = DTYPE(0.0)
-  SUPPORT = self.support
-  ROW_STRIDE = self.row_stride
+  SUPPORT = self.opt_params.support
+  ROW_STRIDE = self.opt_params.row_stride
   # See the COEFF_INDEX note in eval2s: the chain runs over all DEGREE + 1
   # coefficient rows, which is not the same as the support.
-  COEFF_INDEX = tuple(range(1, self.degree + 1))
+  COEFF_INDEX = tuple(range(1, self.opt_params.degree + 1))
 
   def impl(self, x):
     if abs(x) >= 1.0:
