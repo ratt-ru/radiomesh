@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 import numba
 import numpy as np
-from numba import types
+from numba.core import errors, types
 from numba.core.types import StructRef
 from numba.experimental import structref
 from numba.extending import (
@@ -1040,6 +1040,9 @@ def _register_wgridder_overloads(template):
 
   @overload_method(wgridder_structref, "x2dirty", jit_options=full_jit_options)
   def overload_x2dirty(self, visibilities, nx, ny):
+    uvw_dtype = as_dtype(self.field_dict["uvw"].dtype)
+    MAX_SUPPORT = 16 if uvw_dtype == np.float64 else 8
+
     def impl(self, visibilities, nx, ny):
       grid = np.zeros((self.nu, self.nv), visibilities.dtype)
       dirty = np.zeros((nx, ny))
@@ -1047,26 +1050,71 @@ def _register_wgridder_overloads(template):
       if self.apply_w:
         for wplane in range(self.nw):
           w = self.w_min_d + wplane * self.dw
-          self.x2grid_c(grid, visibilities, wplane, w)
+          self.x2grid_c(grid, visibilities, wplane, w, MAX_SUPPORT)
       else:
-        self.x2grid_c(grid, visibilities, 0, self.w_min_d)
+        self.x2grid_c(grid, visibilities, 0, self.w_min_d, MAX_SUPPORT)
 
       return dirty
 
     return impl
 
-  @overload_method(wgridder_structref, "x2grid_c", jit_options=full_jit_options)
-  def overload_x2grid_c(self, grid, visibilities, wplane, w):
+  # Dispatch ladder specialising on the kernel support. Each rung compares the
+  # runtime support against its literal and tail-calls the next rung down, so
+  # it contains no loops of its own -- compiling it with parallel=True would
+  # emit a NumbaPerformanceWarning per rung. The threaded body lives in
+  # x2grid_c_kernel below.
+  @overload_method(wgridder_structref, "x2grid_c", jit_options=jit_options)
+  def overload_x2grid_c(self, grid, visibilities, wplane, w, SUPPORT):
+    if not isinstance(SUPPORT, types.IntegerLiteral):
+      raise errors.RequireLiteralValue(f"SUPPORT {SUPPORT} must be an IntegerLiteral")
+
+    SUPPORT_LITERAL = SUPPORT.literal_value
+    HALF_SUPPORT = SUPPORT_LITERAL // 2
+    SUPPORT_LITERAL_MINUS_ONE = SUPPORT_LITERAL - 1
+
+    if SUPPORT_LITERAL >= 8:
+
+      def impl(self, grid, visibilities, wplane, w, SUPPORT):
+        if self.wgrid_params.kernel.support <= HALF_SUPPORT:
+          return self.x2grid_c(grid, visibilities, wplane, w, HALF_SUPPORT)
+        if self.wgrid_params.kernel.support < SUPPORT_LITERAL:
+          return self.x2grid_c(grid, visibilities, wplane, w, SUPPORT_LITERAL_MINUS_ONE)
+
+        return self.x2grid_c_kernel(grid, visibilities, wplane, w, SUPPORT_LITERAL)
+    elif SUPPORT_LITERAL > 4:
+
+      def impl(self, grid, visibilities, wplane, w, SUPPORT):
+        if self.wgrid_params.kernel.support < SUPPORT_LITERAL:
+          return self.x2grid_c(grid, visibilities, wplane, w, SUPPORT_LITERAL_MINUS_ONE)
+
+        return self.x2grid_c_kernel(grid, visibilities, wplane, w, SUPPORT_LITERAL)
+    else:
+
+      def impl(self, grid, visibilities, wplane, w, SUPPORT):
+        return self.x2grid_c_kernel(grid, visibilities, wplane, w, SUPPORT_LITERAL)
+
+    return impl
+
+  # Gridding body, specialised on the literal kernel support. This owns the
+  # prange over blocks, so it takes the parallel jit options.
+  @overload_method(wgridder_structref, "x2grid_c_kernel", jit_options=full_jit_options)
+  def overload_x2grid_c_kernel(self, grid, visibilities, wplane, w, SUPPORT):
     from numba.typed import List
+
+    if not isinstance(SUPPORT, types.IntegerLiteral):
+      raise errors.RequireLiteralValue(f"SUPPORT {SUPPORT} must be an IntegerLiteral")
 
     TILESIZE = self.tilesize
 
-    def impl(self, grid, visibilities, wplane, w):
+    def impl(self, grid, visibilities, wplane, w, SUPPORT):
       locks = np.full(self.nu, 0, np.int32)
       nblocks = len(self.blockstart)
       kernel = self.wgrid_params.kernel
       support = kernel.support
       safe_u = safe_v = 2 * self.nsafe + TILESIZE
+
+      if kernel.support != SUPPORT:
+        raise ValueError(f"Requested support {support} != {SUPPORT}")
 
       # Allocate per thread tile helpers
       nthreads = numba.get_num_threads()
@@ -1076,7 +1124,7 @@ def _register_wgridder_overloads(template):
         v_kernel = kernel.allocate_taps()
         tiled_helpers.append(
           GriddingTileBuffer(
-            grid, locks, wplane, self.dw, safe_u, safe_v, u_kernel, v_kernel
+            self, grid, locks, wplane, self.dw, safe_u, safe_v, u_kernel, v_kernel
           )
         )
 
