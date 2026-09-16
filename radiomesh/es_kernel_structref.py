@@ -210,10 +210,10 @@ def overload_es_kernel(
   if not ANALYTIC:
     fields.append(("coeffs", types.float64[:, :]))
 
-  state_type = ESKernelStructRef(fields)
+  struct_type = ESKernelStructRef(fields)
 
   def impl(epsilon, oversampling, beta, e0, support, analytic, single, apply_w):
-    instance = structref.new(state_type)
+    instance = structref.new(struct_type)
     instance.epsilon = epsilon
     instance.oversampling = oversampling
     instance.beta = beta
@@ -569,12 +569,12 @@ def overload_template_es_kernel(es_kernel, support, single):
     ("coeffs", types.float32[:, :] if single.literal_value else types.float64[:, :]),
   ]
 
-  state_type = TemplateESKernelStructRef(fields)
+  struct_type = TemplateESKernelStructRef(fields)
 
-  NCOLUMNS = min(state_type.support, state_type.row_stride)
-  DTYPE = state_type.dtype
-  COEFFS_SHAPE = state_type.coeffs_shape
-  SOURCE_SHAPE = state_type.source_coeffs_shape
+  NCOLUMNS = min(struct_type.support, struct_type.row_stride)
+  DTYPE = struct_type.dtype
+  COEFFS_SHAPE = struct_type.coeffs_shape
+  SOURCE_SHAPE = struct_type.source_coeffs_shape
 
   def impl(es_kernel, support, single):
     if es_kernel.coeffs.shape != SOURCE_SHAPE:
@@ -582,7 +582,7 @@ def overload_template_es_kernel(es_kernel, support, single):
         f"ESKernel.coeffs shape {es_kernel.coeffs.shape} != {SOURCE_SHAPE}"
       )
 
-    instance = structref.new(state_type)
+    instance = structref.new(struct_type)
     instance.es_kernel
     instance.support = support
     instance.single = single
