@@ -24,6 +24,10 @@ from radiomesh.gridding_types import (
 )
 from radiomesh.parameters import estimate_gridding_parameters
 
+# Parallelism comes from ParallelWGridderImpl's overloads (parallel=True in
+# the template's jit_options), not from this wrapper.
+nogil_njit = numba.njit(nogil=True)
+
 
 def test_record_assignment():
   @numba.njit(nogil=True, cache=True)
@@ -197,7 +201,7 @@ def test_wgridder_impl(parallel, grid_fn, ctx, uvw_coordinates, frequencies):
 # ----------------------------------------------------------------------
 
 
-@numba.njit(parallel=True, nogil=True)
+@nogil_njit
 def parallel_count_ranges(uvw, frequencies, vis, weight, flag, params, px, py):
   impl = ParallelWGridderImpl(uvw, frequencies, params, False, False, False)
   impl.scan_data(vis, weight, flag)
@@ -205,7 +209,7 @@ def parallel_count_ranges(uvw, frequencies, vis, weight, flag, params, px, py):
   return impl
 
 
-@numba.njit(parallel=False, nogil=True)
+@nogil_njit
 def serial_count_ranges(uvw, frequencies, vis, weight, flag, params, px, py):
   impl = WGridderImpl(uvw, frequencies, params, False, False, False)
   impl.scan_data(vis, weight, flag)
@@ -213,7 +217,7 @@ def serial_count_ranges(uvw, frequencies, vis, weight, flag, params, px, py):
   return impl
 
 
-@numba.njit(nogil=True)
+@nogil_njit
 def _impl_get_uvw_tile_index(impl, u, v, w, ch):
   """Thin jit wrapper around `impl.uvw_tile_index` so Python test code can
   cross-check a fully-constructed impl's bucket indexing."""
@@ -431,7 +435,7 @@ def test_count_ranges_uranges_cover_blockstart(uvw_coordinates, frequencies):
       )
 
 
-@numba.njit(parallel=True, nogil=True)
+@nogil_njit
 def parallel_x2dirty(uvw, frequencies, vis, weight, flag, params, px, py, nx, ny):
   impl = ParallelWGridderImpl(uvw, frequencies, params, False, False, False)
   # impl.scan_data(vis, weight, flag)
